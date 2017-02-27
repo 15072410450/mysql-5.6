@@ -79,6 +79,20 @@ IF (NOT "$ENV{WITH_ZSTD}" STREQUAL "")
   ADD_DEFINITIONS(-DZSTD)
 ENDIF()
 
+# terocks
+IF (NOT "$ENV{WITH_TEROCKS}" STREQUAL "")
+  SET(rocksdb_static_libs ${rocksdb_static_libs}
+  -Wl,--whole-archive
+  $ENV{WITH_TEROCKS}/libterark-zip-rocksdb-d.a
+  $ENV{WITH_TEROCKS}/libterark-zbs-d.a
+  $ENV{WITH_TEROCKS}/libterark-fsa-d.a
+  $ENV{WITH_TEROCKS}/libterark-core-d.a
+  -Wl,--no-whole-archive
+  ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
+  -ldivsufsort-r
+  -lgomp -lz)
+ENDIF()
+
 SET(rocksdb_static_libs ${rocksdb_static_libs} ${ZLIB_LIBRARY} "-lrt")
 
 MYSQL_ADD_PLUGIN(rocksdb_se ${ROCKSDB_SOURCES} STORAGE_ENGINE DEFAULT STATIC_ONLY
