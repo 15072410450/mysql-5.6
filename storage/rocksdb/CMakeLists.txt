@@ -23,6 +23,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/rocksdb
   ${CMAKE_SOURCE_DIR}/rocksdb/include
   ${CMAKE_SOURCE_DIR}/rocksdb/third-party/gtest-1.7.0/fused-src
+  $ENV{WITH_TEROCKS}/include
 )
 
 ADD_DEFINITIONS(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DOS_LINUX
@@ -83,10 +84,10 @@ ENDIF()
 IF (NOT "$ENV{WITH_TEROCKS}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
-  $ENV{WITH_TEROCKS}/libterark-zip-rocksdb-d.a
-  $ENV{WITH_TEROCKS}/libterark-zbs-d.a
-  $ENV{WITH_TEROCKS}/libterark-fsa-d.a
-  $ENV{WITH_TEROCKS}/libterark-core-d.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-zip-rocksdb-d.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-zbs-d.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-fsa-d.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-core-d.a
   -Wl,--no-whole-archive
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
   -ldivsufsort-r
