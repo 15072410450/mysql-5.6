@@ -3484,6 +3484,7 @@ static int rocksdb_init_func(void *const p) {
   rocksdb::Options main_opts(rocksdb_db_options,
                              rocksdb_cf_options_map.get_defaults());
 
+        main_opts.allow_mmap_reads = true;
   main_opts.env->SetBackgroundThreads(main_opts.max_background_flushes,
                                       rocksdb::Env::Priority::HIGH);
   main_opts.env->SetBackgroundThreads(main_opts.max_background_compactions,
@@ -3492,7 +3493,7 @@ static int rocksdb_init_func(void *const p) {
   tx_db_options.transaction_lock_timeout = 2; // 2 seconds
   tx_db_options.custom_mutex_factory = std::make_shared<Rdb_mutex_factory>();
 
-  status =
+  /*status =
       check_rocksdb_options_compatibility(rocksdb_datadir, main_opts, cf_descr);
 
   // We won't start if we'll determine that there's a chance of data corruption
@@ -3504,7 +3505,7 @@ static int rocksdb_init_func(void *const p) {
                     status.ToString().c_str());
     rdb_open_tables.free_hash();
     DBUG_RETURN(HA_EXIT_FAILURE);
-  }
+  }*/
 
   status = rocksdb::TransactionDB::Open(
       main_opts, tx_db_options, rocksdb_datadir, cf_descr, &cf_handles, &rdb);

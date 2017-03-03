@@ -84,10 +84,10 @@ ENDIF()
 IF (NOT "$ENV{WITH_TEROCKS}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
-  $ENV{WITH_TEROCKS}/lib_static/libterark-zip-rocksdb-d.a
-  $ENV{WITH_TEROCKS}/lib_static/libterark-zbs-d.a
-  $ENV{WITH_TEROCKS}/lib_static/libterark-fsa-d.a
-  $ENV{WITH_TEROCKS}/lib_static/libterark-core-d.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-zip-rocksdb-r.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-zbs-r.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-fsa-r.a
+  $ENV{WITH_TEROCKS}/lib_static/libterark-core-r.a
   -Wl,--no-whole-archive
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
   -ldivsufsort-r
