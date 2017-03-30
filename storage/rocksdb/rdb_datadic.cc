@@ -55,12 +55,13 @@ Rdb_key_def::Rdb_key_def(uint indexnr_arg, uint keyno_arg,
                          rocksdb::ColumnFamilyHandle *cf_handle_arg,
                          uint16_t index_dict_version_arg, uchar index_type_arg,
                          uint16_t kv_format_version_arg, bool is_reverse_cf_arg,
-                         bool is_auto_cf_arg, const char *_name,
-                         Rdb_index_stats _stats)
+                         bool is_auto_cf_arg, bool is_per_partition_cf_arg,
+                         const char *_name, Rdb_index_stats _stats)
     : m_index_number(indexnr_arg), m_cf_handle(cf_handle_arg),
       m_index_dict_version(index_dict_version_arg),
       m_index_type(index_type_arg), m_kv_format_version(kv_format_version_arg),
       m_is_reverse_cf(is_reverse_cf_arg), m_is_auto_cf(is_auto_cf_arg),
+      m_is_per_partition_cf(is_per_partition_cf_arg),
       m_name(_name), m_stats(_stats), m_pk_part_no(nullptr),
       m_pack_info(nullptr), m_keyno(keyno_arg), m_key_parts(0),
       m_prefix_extractor(nullptr), m_maxlength(0) // means 'not intialized'
@@ -73,6 +74,7 @@ Rdb_key_def::Rdb_key_def(uint indexnr_arg, uint keyno_arg,
 Rdb_key_def::Rdb_key_def(const Rdb_key_def &k)
     : m_index_number(k.m_index_number), m_cf_handle(k.m_cf_handle),
       m_is_reverse_cf(k.m_is_reverse_cf), m_is_auto_cf(k.m_is_auto_cf),
+      m_is_per_partition_cf(k.m_is_per_partition_cf),
       m_name(k.m_name), m_stats(k.m_stats), m_pk_part_no(k.m_pk_part_no),
       m_pack_info(k.m_pack_info), m_keyno(k.m_keyno),
       m_key_parts(k.m_key_parts), m_prefix_extractor(k.m_prefix_extractor),
@@ -880,8 +882,8 @@ int Rdb_key_def::unpack_field(
     not all indexes support this
 
   @return
-    UNPACK_SUCCESS - Ok
-    UNPACK_FAILURE - Data format error.
+    HA_EXIT_SUCCESS    OK
+    other              HA_ERR error code
 */
 
 int Rdb_key_def::unpack_record(TABLE *const table, uchar *const buf,
@@ -901,7 +903,7 @@ int Rdb_key_def::unpack_record(TABLE *const table, uchar *const buf,
 
   // Skip the index number
   if ((!reader.read(INDEX_NUMBER_SIZE))) {
-    return HA_EXIT_FAILURE;
+    return HA_ERR_ROCKSDB_CORRUPT_DATA;
   }
 
   // For secondary keys, we expect the value field to contain unpack data and
@@ -911,7 +913,7 @@ int Rdb_key_def::unpack_record(TABLE *const table, uchar *const buf,
       unp_reader.remaining_bytes() &&
       *unp_reader.get_current_ptr() == RDB_UNPACK_DATA_TAG;
   if (has_unpack_info && !unp_reader.read(RDB_UNPACK_HEADER_SIZE)) {
-    return HA_EXIT_FAILURE;
+    return HA_ERR_ROCKSDB_CORRUPT_DATA;
   }
 
   for (uint i = 0; i < m_key_parts; i++) {
@@ -925,7 +927,7 @@ int Rdb_key_def::unpack_record(TABLE *const table, uchar *const buf,
         is_hidden_pk) {
       DBUG_ASSERT(fpi->m_unpack_func);
       if (fpi->m_skip_func(fpi, nullptr, &reader)) {
-        return HA_EXIT_FAILURE;
+        return HA_ERR_ROCKSDB_CORRUPT_DATA;
       }
       continue;
     }
@@ -957,25 +959,25 @@ int Rdb_key_def::unpack_record(TABLE *const table, uchar *const buf,
                         maybe_null ? table->record[0] + null_offset : nullptr,
                         field->null_bit);
 
-      if (res) {
-        return res;
+      if (res != UNPACK_SUCCESS) {
+        return HA_ERR_ROCKSDB_CORRUPT_DATA;
       }
     } else {
       /* It is impossible to unpack the column. Skip it. */
       if (fpi->m_maybe_null) {
         const char *nullp;
         if (!(nullp = reader.read(1)))
-          return HA_EXIT_FAILURE;
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
         if (*nullp == 0) {
           /* This is a NULL value */
           continue;
         }
         /* If NULL marker is not '0', it can be only '1'  */
         if (*nullp != 1)
-          return HA_EXIT_FAILURE;
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
       }
       if (fpi->m_skip_func(fpi, field, &reader))
-        return HA_EXIT_FAILURE;
+        return HA_ERR_ROCKSDB_CORRUPT_DATA;
     }
   }
 
@@ -1001,13 +1003,13 @@ int Rdb_key_def::unpack_record(TABLE *const table, uchar *const buf,
 
       if (stored_key_chksum != computed_key_chksum) {
         report_checksum_mismatch(true, packed_key->data(), packed_key->size());
-        return HA_EXIT_FAILURE;
+        return HA_ERR_ROCKSDB_CHECKSUM_MISMATCH;
       }
 
       if (stored_val_chksum != computed_val_chksum) {
         report_checksum_mismatch(false, unpack_info->data(),
                                  unpack_info->size() - RDB_CHECKSUM_CHUNK_SIZE);
-        return HA_EXIT_FAILURE;
+        return HA_ERR_ROCKSDB_CHECKSUM_MISMATCH;
       }
     } else {
       /* The checksums are present but we are not checking checksums */
@@ -1015,7 +1017,7 @@ int Rdb_key_def::unpack_record(TABLE *const table, uchar *const buf,
   }
 
   if (reader.remaining_bytes())
-    return HA_EXIT_FAILURE;
+    return HA_ERR_ROCKSDB_CORRUPT_DATA;
 
   return HA_EXIT_SUCCESS;
 }
@@ -2639,9 +2641,10 @@ bool Rdb_tbl_def::put_dict(Rdb_dict_manager *const dict,
   for (uint i = 0; i < m_key_count; i++) {
     const Rdb_key_def &kd = *m_key_descr_arr[i];
 
-    const uchar flags =
+    uchar flags =
         (kd.m_is_reverse_cf ? Rdb_key_def::REVERSE_CF_FLAG : 0) |
-        (kd.m_is_auto_cf ? Rdb_key_def::AUTO_CF_FLAG : 0);
+        (kd.m_is_auto_cf ? Rdb_key_def::AUTO_CF_FLAG : 0) |
+        (kd.m_is_per_partition_cf ? Rdb_key_def::PER_PARTITION_CF_FLAG : 0);
 
     const uint cf_id = kd.get_cf()->GetID();
     /*
@@ -2652,13 +2655,18 @@ bool Rdb_tbl_def::put_dict(Rdb_dict_manager *const dict,
       control, we can switch to use it and removing mutex.
     */
     uint existing_cf_flags;
+    const std::string cf_name = kd.get_cf()->GetName();
+
     if (dict->get_cf_flags(cf_id, &existing_cf_flags)) {
+      // For the purposes of comparison we'll clear the partitioning bit. The
+      // intent here is to make sure that both partitioned and non-partitioned
+      // tables can refer to the same CF.
+      existing_cf_flags &= ~Rdb_key_def::CF_FLAGS_TO_IGNORE;
+      flags &= ~Rdb_key_def::CF_FLAGS_TO_IGNORE;
+
       if (existing_cf_flags != flags) {
-        my_printf_error(ER_UNKNOWN_ERROR,
-                        "Column Family Flag is different from existing flag. "
-                        "Assign a new CF flag, or do not change existing "
-                        "CF flag.",
-                        MYF(0));
+        my_error(ER_CF_DIFFERENT, MYF(0), cf_name.c_str(), flags,
+                 existing_cf_flags);
         return true;
       }
     } else {
@@ -3065,7 +3073,8 @@ bool Rdb_ddl_manager::init(Rdb_dict_manager *const dict_arg,
       tdef->m_key_descr_arr[keyno] = std::make_shared<Rdb_key_def>(
           gl_index_id.index_id, keyno, cfh, m_index_dict_version, m_index_type,
           kv_version, flags & Rdb_key_def::REVERSE_CF_FLAG,
-          flags & Rdb_key_def::AUTO_CF_FLAG, "",
+          flags & Rdb_key_def::AUTO_CF_FLAG,
+          flags & Rdb_key_def::PER_PARTITION_CF_FLAG, "",
           m_dict->get_stats(gl_index_id));
     }
     put(tdef);
@@ -3093,8 +3102,7 @@ bool Rdb_ddl_manager::init(Rdb_dict_manager *const dict_arg,
   m_sequence.init(max_index_id_in_dict + 1);
 
   if (!it->status().ok()) {
-    const std::string s = it->status().ToString();
-    sql_print_error("RocksDB: Table_store: load error: %s", s.c_str());
+    rdb_log_status_error(it->status(), "Table_store load error");
     return true;
   }
   delete it;
@@ -3670,8 +3678,8 @@ rocksdb::Iterator *Rdb_dict_manager::new_iterator() const {
 int Rdb_dict_manager::commit(rocksdb::WriteBatch *const batch,
                              const bool &sync) const {
   if (!batch)
-    return HA_EXIT_FAILURE;
-  int res = 0;
+    return HA_ERR_ROCKSDB_COMMIT_FAILED;
+  int res = HA_EXIT_SUCCESS;
   rocksdb::WriteOptions options;
   options.sync = sync;
   rocksdb::Status s = m_db->Write(options, batch);
@@ -3746,6 +3754,7 @@ void Rdb_dict_manager::add_cf_flags(rocksdb::WriteBatch *const batch,
 void Rdb_dict_manager::delete_index_info(rocksdb::WriteBatch *batch,
                                          const GL_INDEX_ID &gl_index_id) const {
   delete_with_prefix(batch, Rdb_key_def::INDEX_INFO, gl_index_id);
+  delete_with_prefix(batch, Rdb_key_def::INDEX_STATISTICS, gl_index_id);
 }
 
 bool Rdb_dict_manager::get_index_info(const GL_INDEX_ID &gl_index_id,

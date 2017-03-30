@@ -26,8 +26,21 @@ INCLUDE_DIRECTORIES(
   $ENV{WITH_TEROCKS}/include
 )
 
-ADD_DEFINITIONS(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DOS_LINUX
-  -DZLIB)
+# This is a strong requirement coming from RocksDB. No conditional checks here.
+ADD_DEFINITIONS(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
+
+IF(UNIX)
+  IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    ADD_DEFINITIONS(-DOS_LINUX)
+
+    CHECK_INCLUDE_FILES(linux/falloc.h HAVE_LINUX_FALLOC_H)
+    CHECK_FUNCTION_EXISTS(fallocate HAVE_FALLOCATE)
+
+    IF(HAVE_FALLOCATE AND HAVE_LINUX_FALLOC_H)
+      ADD_DEFINITIONS(-DROCKSDB_FALLOCATE_PRESENT)
+    ENDIF()
+  ENDIF()
+ENDIF()
 
 SET(ROCKSDB_SOURCES
   ha_rocksdb.cc ha_rocksdb.h ha_rocksdb_proto.h
@@ -42,6 +55,7 @@ SET(ROCKSDB_SOURCES
   rdb_index_merge.cc rdb_index_merge.h
   rdb_perf_context.cc rdb_perf_context.h
   rdb_mutex_wrapper.cc rdb_mutex_wrapper.h
+  rdb_psi.h rdb_psi.cc
   rdb_sst_info.cc rdb_sst_info.h
   rdb_utils.cc rdb_utils.h rdb_buff.h
   rdb_threads.cc rdb_threads.h
@@ -94,7 +108,14 @@ IF (NOT "$ENV{WITH_TEROCKS}" STREQUAL "")
   -lgomp -lz)
 ENDIF()
 
-SET(rocksdb_static_libs ${rocksdb_static_libs} ${ZLIB_LIBRARY} "-lrt")
+CHECK_INCLUDE_FILES(zlib.h HAVE_ZLIB_H)
+
+IF (HAVE_ZLIB_H)
+  ADD_DEFINITIONS(-DZLIB)
+  SET(rocksdb_static_libs ${rocksdb_static_libs} ${ZLIB_LIBRARY})
+ENDIF()
+
+SET(rocksdb_static_libs ${rocksdb_static_libs} "-lrt")
 
 MYSQL_ADD_PLUGIN(rocksdb_se ${ROCKSDB_SOURCES} STORAGE_ENGINE DEFAULT STATIC_ONLY
   LINK_LIBRARIES ${rocksdb_static_libs}

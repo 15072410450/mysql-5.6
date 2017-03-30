@@ -3,4 +3,4 @@
 	url = https://github.com/yoshinorim/rqg.git
 [submodule "rocksdb"]
 	path = rocksdb
-	url = https://github.com/rockeet/rocksdb.git
+	url = https://github.com/Terark/rocksdb.git

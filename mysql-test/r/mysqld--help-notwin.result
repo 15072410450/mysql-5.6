@@ -1142,6 +1142,7 @@ The following options may be given as the first argument:
  (Defaults to on; use --skip-rocksdb-enable-bulk-load-api to disable.)
  --rocksdb-enable-thread-tracking 
  DBOptions::enable_thread_tracking for RocksDB
+ (Defaults to on; use --skip-rocksdb-enable-thread-tracking to disable.)
  --rocksdb-enable-write-thread-adaptive-yield 
  DBOptions::enable_write_thread_adaptive_yield for RocksDB
  --rocksdb-error-if-exists 
@@ -1157,6 +1158,9 @@ The following options may be given as the first argument:
  --rocksdb-force-compute-memtable-stats 
  Force to always compute memtable stats
  (Defaults to on; use --skip-rocksdb-force-compute-memtable-stats to disable.)
+ --rocksdb-force-flush-memtable-and-lzero-now 
+ Acts similar to force_flush_memtable_now, but also
+ compacts all L0 files.
  --rocksdb-force-flush-memtable-now 
  Forces memstore flush which may block all write requests
  so be careful
@@ -1251,8 +1255,8 @@ The following options may be given as the first argument:
  --rocksdb-persistent-cache-path=name 
  Path for BlockBasedTableOptions::persistent_cache for
  RocksDB
- --rocksdb-persistent-cache-size=# 
- Size of cache for
+ --rocksdb-persistent-cache-size-mb=# 
+ Size of cache in MB for
  BlockBasedTableOptions::persistent_cache for RocksDB
  --rocksdb-pin-l0-filter-and-index-blocks-in-cache 
  pin_l0_filter_and_index_blocks_in_cache for RocksDB
@@ -1279,6 +1283,9 @@ The following options may be given as the first argument:
  Skip filling block cache on read requests
  --rocksdb-skip-unique-check-tables=name 
  Skip unique constraint checking for the specified tables
+ --rocksdb-sst-mgr-rate-bytes-per-sec=# 
+ DBOptions::sst_file_manager rate_bytes_per_sec for
+ RocksDB
  --rocksdb-stats-dump-period-sec=# 
  DBOptions::stats_dump_period_sec for RocksDB
  --rocksdb-store-row-debug-checksums 
@@ -1307,6 +1314,8 @@ The following options may be given as the first argument:
  --rocksdb-unsafe-for-binlog 
  Allowing statement based binary logging which may break
  consistency
+ --rocksdb-update-cf-options=name 
+ Option updates per column family for RocksDB
  --rocksdb-use-adaptive-mutex 
  DBOptions::use_adaptive_mutex for RocksDB
  --rocksdb-use-direct-reads 
@@ -1415,6 +1424,8 @@ The following options may be given as the first argument:
  after every #th milli-seconds.
  --slave-compressed-protocol 
  Use compression on master/slave protocol
+ --slave-compression-lib[=name] 
+ Compression library for replication stream
  --slave-exec-mode=name 
  Modes for how replication events should be executed.
  Legal values are STRICT (default) and IDEMPOTENT. In
@@ -1632,6 +1643,9 @@ The following options may be given as the first argument:
  statistics
  --write-query-throttling-limit[=#] 
  Start throttling writes if running mutation queries high.
+ --zstd-net-compression-level[=#] 
+ Compression level for compressed protocol when zstd
+ library is selected. Valid values 0-22.
 
 Variables (--variable-name=value)
 abort-slave-event-count 0
@@ -1888,7 +1902,7 @@ performance-schema-max-rwlock-instances -1
 performance-schema-max-socket-classes 10
 performance-schema-max-socket-instances -1
 performance-schema-max-stage-classes 150
-performance-schema-max-statement-classes 178
+performance-schema-max-statement-classes 179
 performance-schema-max-table-handles -1
 performance-schema-max-table-instances -1
 performance-schema-max-thread-classes 50
@@ -1974,12 +1988,13 @@ rocksdb-delayed-write-rate 16777216
 rocksdb-delete-obsolete-files-period-micros 21600000000
 rocksdb-enable-2pc TRUE
 rocksdb-enable-bulk-load-api TRUE
-rocksdb-enable-thread-tracking FALSE
+rocksdb-enable-thread-tracking TRUE
 rocksdb-enable-write-thread-adaptive-yield FALSE
 rocksdb-error-if-exists FALSE
 rocksdb-flush-log-at-trx-commit 1
 rocksdb-flush-memtable-on-analyze TRUE
 rocksdb-force-compute-memtable-stats TRUE
+rocksdb-force-flush-memtable-and-lzero-now FALSE
 rocksdb-force-flush-memtable-now FALSE
 rocksdb-force-index-records-in-range 0
 rocksdb-global-info ON
@@ -2014,7 +2029,7 @@ rocksdb-perf-context ON
 rocksdb-perf-context-global ON
 rocksdb-perf-context-level 0
 rocksdb-persistent-cache-path 
-rocksdb-persistent-cache-size 0
+rocksdb-persistent-cache-size-mb 0
 rocksdb-pin-l0-filter-and-index-blocks-in-cache TRUE
 rocksdb-print-snapshot-conflict-queries FALSE
 rocksdb-rate-limiter-bytes-per-sec 0
@@ -2025,6 +2040,7 @@ rocksdb-signal-drop-index-thread FALSE
 rocksdb-skip-bloom-filter-on-read FALSE
 rocksdb-skip-fill-cache FALSE
 rocksdb-skip-unique-check-tables (No default value)
+rocksdb-sst-mgr-rate-bytes-per-sec 67108864
 rocksdb-stats-dump-period-sec 600
 rocksdb-store-row-debug-checksums FALSE
 rocksdb-strict-collation-check TRUE
@@ -2035,6 +2051,7 @@ rocksdb-tmpdir (No default value)
 rocksdb-trace-sst-api FALSE
 rocksdb-trx ON
 rocksdb-unsafe-for-binlog FALSE
+rocksdb-update-cf-options (No default value)
 rocksdb-use-adaptive-mutex FALSE
 rocksdb-use-direct-reads FALSE
 rocksdb-use-direct-writes FALSE
@@ -2076,6 +2093,7 @@ slave-allow-batching FALSE
 slave-checkpoint-group 512
 slave-checkpoint-period 300
 slave-compressed-protocol FALSE
+slave-compression-lib zlib
 slave-exec-mode STRICT
 slave-gtid-info ON
 slave-max-allowed-packet 1073741824
@@ -2133,6 +2151,7 @@ verbose TRUE
 wait-timeout 28800
 working-duration 3600
 write-query-throttling-limit 0
+zstd-net-compression-level 3
 
 To see what values a running MySQL server is using, type
 'mysqladmin variables' instead of 'mysqld --verbose --help'.

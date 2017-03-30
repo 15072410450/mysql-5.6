@@ -60,8 +60,6 @@ include/probes_mysql_dtrace.h
 include/sql_state.h
 info_macros.cmake
 libmysql/libmysql.ver
-libmysql/merge_archives_webscalesqlclient.cmake
-libmysql/webscalesqlclient_depends.c
 libmysql*/merge_archives_mysql*.cmake
 libmysql*/mysql*_depends.c
 libmysql*/libmysql*_exports_file.cc
@@ -139,6 +137,7 @@ sql/sql_yacc.h
 sql/gen_lex_hash
 sql/lex_hash.h
 sql/mysql_tzinfo_to_sql
+source_downloads
 storage/heap/hp_test1
 storage/heap/hp_test2
 storage/myisam/myisam_ftdump

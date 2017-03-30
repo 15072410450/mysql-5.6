@@ -844,6 +844,31 @@
 }
 
 {
+   Bug#85301 The ALTER TABLE ... REBUILD PARTITION command leaks memory / one
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:_ZNSt6vectorIhSaIhEE6resizeEm
+   fun:_ZN7myrocks17Rdb_string_writer12write_uint16ERKj
+   fun:_ZNK7myrocks11Rdb_key_def11pack_recordEPK5TABLEPhPKhS4_PNS_17Rdb_string_writerERKbRKxjPj
+   ...
+   fun:_ZN12ha_partition15copy_partitionsEPyS0_
+   fun:_ZN12ha_partition17change_partitionsEP24st_ha_create_informationPKcPyS4_PKhm
+}
+
+{
+   Bug#85301 The ALTER TABLE ... REBUILD PARTITION command leaks memory / two
+   Memcheck:Leak
+   match-leak-kinds: definite
+   ...
+   fun:_ZN6String6appendEPKcj
+   fun:_ZN7myrocks10ha_rocksdb32convert_record_to_storage_formatERKN7rocksdb5SliceEPNS_17Rdb_string_writerEPS2_
+   ...
+   fun:_ZN12ha_partition15copy_partitionsEPyS0_
+   fun:_ZN12ha_partition17change_partitionsEP24st_ha_create_informationPKcPyS4_PKhm
+}
+
+{
    OpenSSL still reachable.
    Memcheck:Leak
    fun:malloc
@@ -1016,6 +1041,43 @@
    fun:_ZN7rocksdb10autovectorIjLm8EE9push_backERKj
    fun:_ZN7rocksdb14ThreadLocalPtr10StaticMeta9ReclaimIdEj
    fun:_ZN7rocksdb14ThreadLocalPtrD1Ev
+   ...
+}
+
+{
+   RocksDB column families are never freed, so ThreadStatus maintains them
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:_ZN7rocksdb19ThreadStatusUpdater19NewColumnFamilyInfoEPKvRKSsS2_S4_
+   ...
+}
+
+{
+   RocksDB column families are never freed, so ThreadStatus maintains them
+   Memcheck:Leak
+   ...
+   fun:_Z41__static_initialization_and_destruction_0ii
+   fun:_GLOBAL__sub_I__ZN7rocksdb24kDefaultColumnFamilyNameE
+   fun:__libc_csu_init
+   ...
+}
+
+{
+   RocksDB column families are never freed, so ThreadStatus maintains them
+   Memcheck:Leak
+   ...
+   fun:_ZN7myrocksL17rocksdb_init_funcEPv
+   fun:_Z24ha_initialize_handlertonP13st_plugin_int
+   ...
+}
+
+{
+   RocksDB column families are never freed, so ThreadStatus maintains them
+   Memcheck:Leak
+   ...
+   fun:_ZN7myrocks14Rdb_cf_manager16get_or_create_cfEPN7rocksdb2DBEPKcRKSsS5_Pb
+   fun:_ZNK7myrocks10ha_rocksdb10create_cfsEPK5TABLEPNS_11Rdb_tbl_defEPSt5arrayINS0_15key_def_cf_infoELm65EE
    ...
 }
 
