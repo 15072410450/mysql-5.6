@@ -23,7 +23,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/rocksdb
   ${CMAKE_SOURCE_DIR}/rocksdb/include
   ${CMAKE_SOURCE_DIR}/rocksdb/third-party/gtest-1.7.0/fused-src
-  $ENV{WITH_TEROCKS}/include
+  $ENV{WITH_TERARKDB}/include
 )
 
 # This is a strong requirement coming from RocksDB. No conditional checks here.
@@ -95,13 +95,13 @@ IF (NOT "$ENV{WITH_ZSTD}" STREQUAL "")
 ENDIF()
 
 # terocks
-IF (NOT "$ENV{WITH_TEROCKS}" STREQUAL "")
+IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
-  $ENV{WITH_TEROCKS}/lib_static/libterark-zip-rocksdb-r.a
-  $ENV{WITH_TEROCKS}/lib_static/libterark-zbs-r.a
-  $ENV{WITH_TEROCKS}/lib_static/libterark-fsa-r.a
-  $ENV{WITH_TEROCKS}/lib_static/libterark-core-r.a
+  $ENV{WITH_TERARKDB}/lib/libterark-zip-rocksdb-r.so
+  $ENV{WITH_TERARKDB}/lib/libterark-zbs-r.so
+  $ENV{WITH_TERARKDB}/lib/libterark-fsa-r.so
+  $ENV{WITH_TERARKDB}/lib/libterark-core-r.so
   -Wl,--no-whole-archive
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
   -ldivsufsort-r
