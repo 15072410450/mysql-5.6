@@ -23,7 +23,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/rocksdb
   ${CMAKE_SOURCE_DIR}/rocksdb/include
   ${CMAKE_SOURCE_DIR}/rocksdb/third-party/gtest-1.7.0/fused-src
-  $ENV{WITH_TERARKDB}/include
+  ${CMAKE_SOURCE_DIR}/../terark-zip-rocksdb/src
 )
 
 # This is a strong requirement coming from RocksDB. No conditional checks here.
