@@ -1008,18 +1008,6 @@ static ST_FIELD_INFO rdb_i_s_tfoptions_fields_info[] = {
 
       std::vector<std::pair<std::string, std::string>> tf_options;
 
-      /*std::string table_options = tfact->GetPrintableTableOptions();
-      int start = 0, pos = table_options.find("\n"), epos = 0;
-      std::string option;
-      while(pos != -1){
-        option = table_options.substr(start, pos - start);
-        epos = option.find("=");
-        if (epos == -1)
-          epos = option.find(":");
-        tf_options.push_back({option.substr(0, epos), option.substr(epos + 1, option.length())});
-        start = pos + 1;
-        pos = table_options.find("\n", start);
-      }*/
       auto table_options = split_into_vector(tfact->GetPrintableTableOptions(), '\n');
       for(auto iter = table_options.begin(); iter != table_options.end(); ++iter){
         std::string option = *iter;
@@ -1047,7 +1035,7 @@ static ST_FIELD_INFO rdb_i_s_tfoptions_fields_info[] = {
       }
     }
      DBUG_RETURN(0);
-  }
+}
 
 static int rdb_i_s_ddl_init(void *const p) {
   DBUG_ENTER_FUNC();
