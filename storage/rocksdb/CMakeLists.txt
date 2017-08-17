@@ -104,7 +104,6 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   $ENV{WITH_TERARKDB}/lib/libterark-core-r.so
   -Wl,--no-whole-archive
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
-  -ldivsufsort-r
   -lgomp -lz)
 ENDIF()
 
