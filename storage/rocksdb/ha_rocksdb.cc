@@ -8806,17 +8806,22 @@ void Rdb_drop_index_thread::run() {
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        status = rdb->CompactRange(compact_range_options, cfh, &range.start,
-                                   &range.limit);
-        if (!status.ok()) {
-          if (status.IsShutdownInProgress()) {
-            break;
-          }
-          rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
-        }
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
-        {
+        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
           finished.insert(d);
+        }
+        else {
+          status = rdb->CompactRange(compact_range_options, cfh, &range.start,
+                                     &range.limit);
+          if (!status.ok()) {
+            if (status.IsShutdownInProgress()) {
+              break;
+            }
+            rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
+          }
+          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+            finished.insert(d);
+          }
         }
       }
 
@@ -9198,6 +9203,10 @@ int ha_rocksdb::optimize(THD *const thd, HA_CHECK_OPT *const check_opt) {
 
   DBUG_ASSERT(thd != nullptr);
   DBUG_ASSERT(check_opt != nullptr);
+
+  rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+  if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal)
+    DBUG_RETURN(HA_EXIT_SUCCESS);
 
   for (uint i = 0; i < table->s->keys; i++) {
     uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];

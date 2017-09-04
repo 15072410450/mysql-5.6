@@ -107,6 +107,7 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
   -ldivsufsort-r
   -ldl
+  -lsnappy
   -lgomp -lz)
 ENDIF()
 

@@ -38,6 +38,8 @@ public:
   Rdb_compact_filter &operator=(const Rdb_compact_filter &) = delete;
 
   explicit Rdb_compact_filter(uint32_t _cf_id) : m_cf_id(_cf_id) {}
+  Rdb_compact_filter(std::vector<uint32> &&_droped_index_ids, uint32_t _cf_id) :
+          m_cf_id(_cf_id), m_dropped_index_ids(_droped_index_ids) {}
   ~Rdb_compact_filter() {}
 
   // keys are passed in sorted order within the same sst.
@@ -60,8 +62,7 @@ public:
       if (m_num_deleted > 0) {
         m_num_deleted = 0;
       }
-      m_should_delete =
-          rdb_get_dict_manager()->is_drop_index_ongoing(gl_index_id);
+      m_should_delete = is_drop_index_ongoing(gl_index_id);
       m_prev_index = gl_index_id;
     }
 
@@ -85,6 +86,48 @@ private:
   mutable uint64 m_num_deleted = 0;
   // Current index id should be deleted or not (should be deleted if true)
   mutable bool m_should_delete = false;
+  // Dropped indexes for compaction filter
+  std::vector<uint32_t> m_dropped_index_ids;
+
+  virtual inline bool is_drop_index_ongoing(
+      const GL_INDEX_ID &gl_index_id) const {
+    DBUG_ASSERT(gl_index_id.cf_id == m_cf_id);
+    uint32_t index_id = gl_index_id.index_id;
+    return std::binary_search(m_dropped_index_ids.begin(),
+                              m_dropped_index_ids.end(), index_id);
+  }
+};
+
+class Rdb_compact_filter_bitmap : public Rdb_compact_filter {
+public:
+  Rdb_compact_filter_bitmap(const Rdb_compact_filter_bitmap &) = delete;
+  Rdb_compact_filter_bitmap &operator=(const Rdb_compact_filter_bitmap &) = delete;
+
+  explicit Rdb_compact_filter_bitmap(uint32_t _cf_id) : Rdb_compact_filter(_cf_id) {}
+  Rdb_compact_filter_bitmap(
+      std::vector<bool> &&_dropped_index_ids_bitmap,
+      uint32_t _cf_id,
+      uint32_t _min_index) :
+          Rdb_compact_filter(_cf_id),
+          m_dropped_ids_bitmap(_dropped_index_ids_bitmap),
+          m_min_index(_min_index) {}
+  ~Rdb_compact_filter_bitmap() {}
+
+  virtual const char *Name() const override { return "Rdb_compact_filter_bitmap"; }
+
+private:
+  std::vector<bool> m_dropped_ids_bitmap;
+  uint32_t m_min_index;
+
+  virtual inline bool is_drop_index_ongoing(
+      const GL_INDEX_ID &gl_index_id) const override {
+    if(gl_index_id.index_id < m_min_index) {
+      return false;
+    }
+    uint32_t index_dist = gl_index_id.index_id - m_min_index;
+    return index_dist < m_dropped_ids_bitmap.size() &&
+           m_dropped_ids_bitmap[index_dist];
+  }
 };
 
 class Rdb_compact_filter_factory : public rocksdb::CompactionFilterFactory {
@@ -100,8 +143,40 @@ public:
 
   std::unique_ptr<rocksdb::CompactionFilter> CreateCompactionFilter(
       const rocksdb::CompactionFilter::Context &context) override {
-    return std::unique_ptr<rocksdb::CompactionFilter>(
-        new Rdb_compact_filter(context.column_family_id));
+    std::vector<uint32_t> dropped_index_ids;
+
+    auto add_index_id = [](void *user_data, uint32_t index_id) {
+      auto dropped_index_id_ptr = (std::vector<uint32_t> *)user_data;
+      dropped_index_id_ptr->push_back(index_id);
+    };
+
+    rdb_get_dict_manager()->get_all_dropped_index_ongoing(
+      context.column_family_id, &dropped_index_ids, add_index_id);
+
+    if (dropped_index_ids.empty()) {
+      return std::unique_ptr<rocksdb::CompactionFilter>(
+          new Rdb_compact_filter(
+                  std::move(dropped_index_ids), context.column_family_id));
+    }
+    if (dropped_index_ids.front() > dropped_index_ids.back()) {
+      std::reverse(dropped_index_ids.begin(), dropped_index_ids.end());
+    }
+    uint32_t index_dist = dropped_index_ids.back() - dropped_index_ids.front() + 1;
+    if (index_dist / (sizeof(uint32_t) * 4) > dropped_index_ids.size()) {
+      return std::unique_ptr<rocksdb::CompactionFilter>(
+          new Rdb_compact_filter(
+                  std::move(dropped_index_ids), context.column_family_id));
+    } else {
+      std::vector<bool> dropped_index_ids_bitmap(index_dist, false);
+      uint32_t min_index = *dropped_index_ids.begin();
+
+      for (auto iter = dropped_index_ids.begin(); iter != dropped_index_ids.end(); ++iter) {
+        dropped_index_ids_bitmap[*iter - min_index] = true;
+      }
+      return std::unique_ptr<rocksdb::CompactionFilter>(
+          new Rdb_compact_filter_bitmap(
+                  std::move(dropped_index_ids_bitmap), context.column_family_id, min_index));
+    }
   }
 };
 
