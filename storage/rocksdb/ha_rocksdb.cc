@@ -9204,18 +9204,18 @@ int ha_rocksdb::optimize(THD *const thd, HA_CHECK_OPT *const check_opt) {
   DBUG_ASSERT(thd != nullptr);
   DBUG_ASSERT(check_opt != nullptr);
 
-  rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
-  if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal)
-    DBUG_RETURN(HA_EXIT_SUCCESS);
-
   for (uint i = 0; i < table->s->keys; i++) {
     uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
     auto range = get_range(i, buf);
-    const rocksdb::Status s = rdb->CompactRange(rocksdb::CompactRangeOptions(),
-                                                m_key_descr_arr[i]->get_cf(),
-                                                &range.start, &range.limit);
-    if (!s.ok()) {
-      DBUG_RETURN(rdb_error_to_mysql(s));
+    auto cfh = m_key_descr_arr[i]->get_cf();
+    rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+    if (cf_options.compaction_style != rocksdb::kCompactionStyleUniversal) {
+      const rocksdb::Status s = rdb->CompactRange(rocksdb::CompactRangeOptions(),
+                                                  cfh,
+                                                  &range.start, &range.limit);
+      if (!s.ok()) {
+        DBUG_RETURN(rdb_error_to_mysql(s));
+      }
     }
   }
 
