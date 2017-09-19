@@ -121,6 +121,8 @@ private:
 
   virtual inline bool is_drop_index_ongoing(
       const GL_INDEX_ID &gl_index_id) const override {
+    DBUG_ASSERT(gl_index_id.cf_id == m_cf_id);
+
     if(gl_index_id.index_id < m_min_index) {
       return false;
     }
