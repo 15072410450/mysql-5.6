@@ -97,6 +97,7 @@ ENDIF()
 # terocks
 IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
+  -Wl,--trace
   -Wl,--whole-archive
   $ENV{WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-r.a
   $ENV{WITH_TERARKDB}/lib_static/libterark-zbs-r.a
@@ -107,7 +108,8 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
   -ldivsufsort-r
   -ldl
-  -lsnappy
+  -ltbb
+  /newssd1/opt/we-compiled-gcc-4.8/lib64/libsnappy.a
   -lgomp -lz)
 ENDIF()
 
