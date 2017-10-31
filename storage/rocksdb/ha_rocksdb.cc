@@ -180,7 +180,12 @@ static int rocksdb_compact_column_family(THD *const thd,
     if (cfh != nullptr && rdb != nullptr) {
       sql_print_information("RocksDB: Manual compaction of column family: %s\n",
                             cf);
-      rdb->CompactRange(rocksdb::CompactRangeOptions(), cfh, nullptr, nullptr);
+      const rocksdb::Status s =
+        rdb->CompactRange(rocksdb::CompactRangeOptions(), cfh, nullptr, nullptr);
+      if (!s.ok()) {
+        rdb_log_status_error(s);
+        return HA_EXIT_FAILURE;
+      }
     }
   }
   return HA_EXIT_SUCCESS;
