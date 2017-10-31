@@ -99,14 +99,14 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--trace
   -Wl,--whole-archive
-  $ENV{WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-r.a
-  $ENV{WITH_TERARKDB}/lib_static/libterark-zbs-r.a
-  $ENV{WITH_TERARKDB}/lib_static/libterark-fsa-r.a
-  $ENV{WITH_TERARKDB}/lib_static/libterark-core-r.a
+  $ENV{WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-d.a
+  $ENV{WITH_TERARKDB}/lib_static/libterark-zbs-d.a
+  $ENV{WITH_TERARKDB}/lib_static/libterark-fsa-d.a
+  $ENV{WITH_TERARKDB}/lib_static/libterark-core-d.a
   -Wl,--no-whole-archive
   /newssd1/temp/openssl-1.0.1e/lib/libcrypto.a
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
-  -ldivsufsort-r
+  #-ldivsufsort-r
   -ldl
   -ltbb
   /newssd1/opt/we-compiled-gcc-4.8/lib64/libsnappy.a

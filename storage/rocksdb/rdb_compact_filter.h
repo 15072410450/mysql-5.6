@@ -77,9 +77,11 @@ public:
 
   virtual const char *Name() const override { return "Rdb_compact_filter"; }
 
-private:
+protected:
   // Column family for this compaction filter
   const uint32_t m_cf_id;
+
+private:
   // Index id of the previous record
   mutable GL_INDEX_ID m_prev_index = {0, 0};
   // Number of rows deleted for the same index id
