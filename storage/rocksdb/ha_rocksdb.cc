@@ -413,6 +413,7 @@ static char *rocksdb_wal_dir;
 static char *rocksdb_persistent_cache_path;
 static uint64_t rocksdb_index_type;
 static char rocksdb_background_sync;
+static char rocksdb_background_system_flush;
 static uint32_t rocksdb_debug_optimizer_n_rows;
 static my_bool rocksdb_force_compute_memtable_stats;
 static my_bool rocksdb_debug_optimizer_no_zero_cardinality;
@@ -1025,6 +1026,11 @@ static MYSQL_SYSVAR_BOOL(background_sync, rocksdb_background_sync,
                          PLUGIN_VAR_RQCMDARG,
                          "turns on background syncs for RocksDB", nullptr,
                          nullptr, FALSE);
+
+static MYSQL_SYSVAR_BOOL(background_system_flush, rocksdb_background_system_flush,
+    PLUGIN_VAR_RQCMDARG,
+    "turns on background flush column family __system__ for RocksDB", nullptr,
+    nullptr, TRUE);
 
 static MYSQL_THDVAR_UINT(flush_log_at_trx_commit, PLUGIN_VAR_RQCMDARG,
                          "Sync on transaction commit. Similar to "
@@ -10350,6 +10356,8 @@ static SHOW_VAR rocksdb_status_vars[] = {
 void Rdb_background_thread::run() {
   // How many seconds to wait till flushing the WAL next time.
   const int WAKE_UP_INTERVAL = 1;
+  const int FLUSH_INTERVAL = 60;
+  int flush_tick = 0;
 
   timespec ts_next_sync;
   clock_gettime(CLOCK_REALTIME, &ts_next_sync);
@@ -10394,6 +10402,17 @@ void Rdb_background_thread::run() {
       if (!s.ok()) {
         rdb_handle_io_error(s, RDB_IO_ERROR_BG_THREAD);
       }
+    }
+    // Flush __system__
+    if (rdb && rocksdb_background_system_flush && flush_tick++ >= FLUSH_INTERVAL) {
+      const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
+      rocksdb::ColumnFamilyHandle *cfh;
+      bool is_automatic;
+      cfh = cf_manager.get_cf(DEFAULT_SYSTEM_CF_NAME, "", nullptr, &is_automatic);
+      if (cfh != nullptr) {
+        rdb->Flush(rocksdb::FlushOptions(), cf_handle);
+      }
+      flush_tick = 0;
     }
 
     // Set the next timestamp for mysql_cond_timedwait() (which ends up calling
