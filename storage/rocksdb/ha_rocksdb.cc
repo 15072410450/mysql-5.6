@@ -1332,6 +1332,7 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(update_cf_options),
 
     MYSQL_SYSVAR(background_sync),
+    MYSQL_SYSVAR(background_system_flush),
 
     MYSQL_SYSVAR(flush_log_at_trx_commit),
     MYSQL_SYSVAR(write_disable_wal),
@@ -10410,7 +10411,7 @@ void Rdb_background_thread::run() {
       bool is_automatic;
       cfh = cf_manager.get_cf(DEFAULT_SYSTEM_CF_NAME, "", nullptr, &is_automatic);
       if (cfh != nullptr) {
-        rdb->Flush(rocksdb::FlushOptions(), cf_handle);
+        rdb->Flush(rocksdb::FlushOptions(), cfh);
       }
       flush_tick = 0;
     }
