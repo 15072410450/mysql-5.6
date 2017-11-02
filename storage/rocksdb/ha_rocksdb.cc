@@ -413,7 +413,7 @@ static char *rocksdb_wal_dir;
 static char *rocksdb_persistent_cache_path;
 static uint64_t rocksdb_index_type;
 static char rocksdb_background_sync;
-static char rocksdb_background_system_flush;
+static uint32_t rocksdb_system_cf_background_flush_interval;
 static uint32_t rocksdb_debug_optimizer_n_rows;
 static my_bool rocksdb_force_compute_memtable_stats;
 static my_bool rocksdb_debug_optimizer_no_zero_cardinality;
@@ -1027,10 +1027,12 @@ static MYSQL_SYSVAR_BOOL(background_sync, rocksdb_background_sync,
                          "turns on background syncs for RocksDB", nullptr,
                          nullptr, FALSE);
 
-static MYSQL_SYSVAR_BOOL(background_system_flush, rocksdb_background_system_flush,
-    PLUGIN_VAR_RQCMDARG,
-    "turns on background flush column family __system__ for RocksDB", nullptr,
-    nullptr, TRUE);
+static MYSQL_THDVAR_UINT(system_cf_background_flush_interval,
+                         rocksdb_system_cf_background_flush_interval,
+                         PLUGIN_VAR_RQCMDARG,
+                         "interval(seconds) of background flush column family "
+                         "'__system__' for RocksDB . 0 to disable", nullptr,
+                         nullptr, 120, 0, 3600, 0);
 
 static MYSQL_THDVAR_UINT(flush_log_at_trx_commit, PLUGIN_VAR_RQCMDARG,
                          "Sync on transaction commit. Similar to "
@@ -1332,7 +1334,7 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(update_cf_options),
 
     MYSQL_SYSVAR(background_sync),
-    MYSQL_SYSVAR(background_system_flush),
+    MYSQL_SYSVAR(system_cf_background_flush_interval),
 
     MYSQL_SYSVAR(flush_log_at_trx_commit),
     MYSQL_SYSVAR(write_disable_wal),
@@ -10357,7 +10359,6 @@ static SHOW_VAR rocksdb_status_vars[] = {
 void Rdb_background_thread::run() {
   // How many seconds to wait till flushing the WAL next time.
   const int WAKE_UP_INTERVAL = 1;
-  const int FLUSH_INTERVAL = 60;
   int flush_tick = 0;
 
   timespec ts_next_sync;
@@ -10405,13 +10406,16 @@ void Rdb_background_thread::run() {
       }
     }
     // Flush __system__
-    if (rdb && rocksdb_background_system_flush && flush_tick++ >= FLUSH_INTERVAL) {
+    if (rdb && rocksdb_system_cf_background_flush_interval > 0
+        && flush_tick++ >= rocksdb_system_cf_background_flush_interval) {
       const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
       rocksdb::ColumnFamilyHandle *cfh;
       bool is_automatic;
       cfh = cf_manager.get_cf(DEFAULT_SYSTEM_CF_NAME, "", nullptr, &is_automatic);
       if (cfh != nullptr) {
-        rdb->Flush(rocksdb::FlushOptions(), cfh);
+        rocksdb::FlushOptions fo;
+        fo.wait = false;
+        rdb->Flush(fo, cfh);
       }
       flush_tick = 0;
     }
