@@ -10359,7 +10359,7 @@ static SHOW_VAR rocksdb_status_vars[] = {
 void Rdb_background_thread::run() {
   // How many seconds to wait till flushing the WAL next time.
   const int WAKE_UP_INTERVAL = 1;
-  int flush_tick = 0;
+  uint32_t flush_tick = 0;
 
   timespec ts_next_sync;
   clock_gettime(CLOCK_REALTIME, &ts_next_sync);
