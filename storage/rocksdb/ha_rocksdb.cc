@@ -1027,7 +1027,7 @@ static MYSQL_SYSVAR_BOOL(background_sync, rocksdb_background_sync,
                          "turns on background syncs for RocksDB", nullptr,
                          nullptr, FALSE);
 
-static MYSQL_THDVAR_UINT(system_cf_background_flush_interval,
+static MYSQL_SYSVAR_UINT(system_cf_background_flush_interval,
                          rocksdb_system_cf_background_flush_interval,
                          PLUGIN_VAR_RQCMDARG,
                          "interval(seconds) of background flush column family "
