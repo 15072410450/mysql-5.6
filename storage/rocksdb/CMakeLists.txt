@@ -104,12 +104,11 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   $ENV{WITH_TERARKDB}/lib_static/libterark-fsa-r.a
   $ENV{WITH_TERARKDB}/lib_static/libterark-core-r.a
   -Wl,--no-whole-archive
-  /newssd1/temp/openssl-1.0.1e/lib/libcrypto.a
+  -lcrypto
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
-  #-ldivsufsort-r
   -ldl
   -ltbb
-  /newssd1/opt/we-compiled-gcc-4.8/lib64/libsnappy.a
+  -lsnappy
   -lgomp -lz)
 ENDIF()
 
