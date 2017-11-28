@@ -8786,28 +8786,49 @@ void Rdb_drop_index_thread::run() {
       std::unordered_set<GL_INDEX_ID> finished;
       rocksdb::ReadOptions read_opts;
       read_opts.total_order_seek = true; // disable bloom filter
+      std::sort(indices.begin(), indices.end());
 
-      for (const auto d : indices) {
+      for (size_t i = 0; i < indices.size(); ++i) {
+        uint32_t cf_id = indices[i].cf_id;
+        uint32_t index_id = indices[i].index_id;
+        uint32_t index_span = 1;
+        while (i + 1 < indices.size()
+               && indices[i + i].cf_id == cf_id
+               && indices[i + i].index_id == index_id + index_span) {
+          ++index_span;
+          ++i;
+        }
+        uint32_t index_id_end = index_id + index_span;
         uint32 cf_flags = 0;
-        if (!dict_manager.get_cf_flags(d.cf_id, &cf_flags)) {
+        if (!dict_manager.get_cf_flags(cf_id, &cf_flags)) {
           sql_print_error("RocksDB: Failed to get column family flags "
                           "from cf id %u. MyRocks data dictionary may "
                           "get corrupted.",
-                          d.cf_id);
+                          cf_id);
           abort_with_stack_traces();
         }
-        rocksdb::ColumnFamilyHandle *cfh = cf_manager.get_cf(d.cf_id);
+        rocksdb::ColumnFamilyHandle *cfh = cf_manager.get_cf(cf_id);
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
+        bool is_finished = true;
+        for (GL_INDEX_ID d = {cf_id, index_id}; d.index_id != index_id_end;
+             ++d.index_id) {
+          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+            finished.insert(d);
+          }
+          else {
+            is_finished = false;
+          }
+        }
+        if (is_finished)
         {
-          finished.insert(d);
           continue;
         }
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
-        rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
-                                         is_reverse_cf ? 0 : 1);
+        rocksdb::Range range = get_range(index_id, buf,
+                                         is_reverse_cf ? index_span : 0,
+                                         is_reverse_cf ? 0 : index_span);
         rocksdb::CompactRangeOptions compact_range_options;
         compact_range_options.bottommost_level_compaction =
             rocksdb::BottommostLevelCompaction::kForce;
@@ -8822,7 +8843,7 @@ void Rdb_drop_index_thread::run() {
         }
         rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
         if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
-          finished.insert(d);
+          // called empty checke before , nothing to do ...
         }
         else {
           status = rdb->CompactRange(compact_range_options, cfh, &range.start,
@@ -8833,8 +8854,11 @@ void Rdb_drop_index_thread::run() {
             }
             rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
           }
-          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-            finished.insert(d);
+          for (GL_INDEX_ID d = {cf_id, index_id}; d.index_id != index_id_end;
+               ++d.index_id) {
+            if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+              finished.insert(d);
+            }
           }
         }
       }
