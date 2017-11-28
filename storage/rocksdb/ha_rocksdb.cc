@@ -8780,12 +8780,13 @@ void Rdb_drop_index_thread::run() {
     DBUG_ASSERT(ret == 0 || ret == ETIMEDOUT);
     RDB_MUTEX_UNLOCK_CHECK(m_signal_mutex);
 
-    std::unordered_set<GL_INDEX_ID> indices;
-    dict_manager.get_ongoing_drop_indexes(&indices);
-    if (!indices.empty()) {
+    std::unordered_set<GL_INDEX_ID> indices_tmp;
+    dict_manager.get_ongoing_drop_indexes(&indices_tmp);
+    if (!indices_tmp.empty()) {
       std::unordered_set<GL_INDEX_ID> finished;
       rocksdb::ReadOptions read_opts;
       read_opts.total_order_seek = true; // disable bloom filter
+      std::vector<GL_INDEX_ID> indices(indices_tmp.begin(), indices_tmp.end());
       std::sort(indices.begin(), indices.end());
 
       for (size_t i = 0; i < indices.size(); ++i) {
@@ -8811,20 +8812,6 @@ void Rdb_drop_index_thread::run() {
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
-        bool is_finished = true;
-        for (GL_INDEX_ID d = {cf_id, index_id}; d.index_id != index_id_end;
-             ++d.index_id) {
-          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-            finished.insert(d);
-          }
-          else {
-            is_finished = false;
-          }
-        }
-        if (is_finished)
-        {
-          continue;
-        }
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
         rocksdb::Range range = get_range(index_id, buf,
                                          is_reverse_cf ? index_span : 0,
@@ -8841,9 +8828,23 @@ void Rdb_drop_index_thread::run() {
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
+        bool is_finished = true;
+        for (GL_INDEX_ID d = {cf_id, index_id}; d.index_id != index_id_end;
+             ++d.index_id) {
+          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+            finished.insert(d);
+          }
+          else {
+            is_finished = false;
+          }
+        }
+        if (is_finished)
+        {
+          continue;
+        }
         rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
         if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
-          // called empty checke before , nothing to do ...
+          // called empty check before , nothing to do ...
         }
         else {
           status = rdb->CompactRange(compact_range_options, cfh, &range.start,
