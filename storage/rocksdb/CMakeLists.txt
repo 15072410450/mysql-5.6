@@ -97,7 +97,6 @@ ENDIF()
 # terocks
 IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
-  -Wl,--trace
   -Wl,--whole-archive
   $ENV{WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-r.a
   $ENV{WITH_TERARKDB}/lib_static/libterark-zbs-r.a
