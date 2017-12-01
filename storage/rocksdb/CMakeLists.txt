@@ -106,7 +106,6 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   -lcrypto
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
   -ldl
-  -ltbb
   -lsnappy
   -lgomp -lz)
 ENDIF()
