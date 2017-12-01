@@ -108,7 +108,8 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
   -ldl
   -ltbb
-  -lsnappy
+  #-lsnappy
+  /newssd1/opt/we-compiled-gcc-4.8/lib64/libsnappy.a
   -lgomp -lz)
 ENDIF()
 
