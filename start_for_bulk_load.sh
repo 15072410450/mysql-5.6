@@ -20,4 +20,5 @@ env TerarkZipTable_localTempDir=/ssd/mysql/terark-temp \
     TerarkZipTable_indexCacheRatio=0.001 \
     TerarkZipTable_sampleRatio=0.015 \
     TerarkZipTable_extendedConfigFile=$DIR/license \
+    TerarkUseDivSufSort=1 \
     $DIR/support-files/mysql.server start --defaults-file=$DIR/my.cnf
