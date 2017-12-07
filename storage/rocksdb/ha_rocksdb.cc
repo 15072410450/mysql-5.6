@@ -8794,8 +8794,8 @@ void Rdb_drop_index_thread::run() {
         uint32_t index_id = indices[i].index_id;
         uint32_t index_span = 1;
         while (i + 1 < indices.size()
-               && indices[i + i].cf_id == cf_id
-               && indices[i + i].index_id == index_id + index_span) {
+               && indices[i + 1].cf_id == cf_id
+               && indices[i + 1].index_id == index_id + index_span) {
           ++index_span;
           ++i;
         }
