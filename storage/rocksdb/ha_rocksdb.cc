@@ -8795,7 +8795,6 @@ void Rdb_drop_index_thread::run() {
           continue;
         }
         for(const auto &props : table_props_collection) {
-          const std::string sst_name = rdb_filename_without_path(props.first);
           stats.clear();
           Rdb_tbl_prop_coll::read_stats_from_tbl_props(props.second, &stats);
           bool can_drop = true;
@@ -8806,6 +8805,11 @@ void Rdb_drop_index_thread::run() {
             }
           }
           if (can_drop) {
+            std::string sst_name = props.first;
+            const size_t pos = sst_name.rfind('/');
+            if (pos != std::string::npos) {
+              sst_name = sst_name.substr(pos + 1);
+            }
             status = rdb->DeleteFile(sst_name);
             if (!status.ok()) {
               if (status.IsShutdownInProgress()) {
@@ -8838,6 +8842,7 @@ void Rdb_drop_index_thread::run() {
           finished.insert(d);
           continue;
         }
+        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
         if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
           // CompactRange is unfriendly to universal compaction
           continue;
@@ -8849,7 +8854,6 @@ void Rdb_drop_index_thread::run() {
         compact_range_options.bottommost_level_compaction =
             rocksdb::BottommostLevelCompaction::kForce;
         compact_range_options.exclusive_manual_compaction = false;
-        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
         status = rdb->CompactRange(compact_range_options, cfh, &range.start,
                                    &range.limit);
         if (!status.ok()) {
