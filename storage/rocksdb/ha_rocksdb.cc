@@ -8780,87 +8780,86 @@ void Rdb_drop_index_thread::run() {
     DBUG_ASSERT(ret == 0 || ret == ETIMEDOUT);
     RDB_MUTEX_UNLOCK_CHECK(m_signal_mutex);
 
-    std::unordered_set<GL_INDEX_ID> indices_tmp;
-    dict_manager.get_ongoing_drop_indexes(&indices_tmp);
-    if (!indices_tmp.empty()) {
+    std::unordered_set<GL_INDEX_ID> indices;
+    dict_manager.get_ongoing_drop_indexes(&indices);
+    if (!indices.empty()) {
+      rocksdb::Status status;
+      // flowing code copy from *rdb_i_s_index_file_map_fill_table*
+      // check GL_INDEX_ID in sst is necessary or not
+      const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
+      std::vector<Rdb_index_stats> stats;
+      for (const auto &cf_handle : cf_manager.get_all_cf()) {
+        rocksdb::TablePropertiesCollection table_props_collection;
+        status = rdb->GetPropertiesOfAllTables(cf_handle, &table_props_collection);
+        if(!status.ok()) {
+          continue;
+        }
+        for(const auto &props : table_props_collection) {
+          const std::string sst_name = rdb_filename_without_path(props.first);
+          stats.clear();
+          Rdb_tbl_prop_coll::read_stats_from_tbl_props(props.second, &stats);
+          bool can_drop = true;
+          for(auto it : stats) {
+            if (indices.find(it.m_gl_index_id) == indices.end()) {
+              can_drop = false;
+              break;
+            }
+          }
+          if (can_drop) {
+            status = rdb->DeleteFile(sst_name);
+            if (!status.ok()) {
+              if (status.IsShutdownInProgress()) {
+                break;
+              }
+              rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
+            }
+          }
+        }
+      }
+      // we have already removed unnecessary files , don't need DeleteFilesInRange
       std::unordered_set<GL_INDEX_ID> finished;
       rocksdb::ReadOptions read_opts;
       read_opts.total_order_seek = true; // disable bloom filter
-      std::vector<GL_INDEX_ID> indices(indices_tmp.begin(), indices_tmp.end());
-      std::sort(indices.begin(), indices.end());
 
-      for (size_t i = 0; i < indices.size(); ++i) {
-        uint32_t cf_id = indices[i].cf_id;
-        uint32_t index_id = indices[i].index_id;
-        uint32_t index_span = 1;
-        while (i + 1 < indices.size()
-               && indices[i + 1].cf_id == cf_id
-               && indices[i + 1].index_id == index_id + index_span) {
-          ++index_span;
-          ++i;
-        }
-        uint32_t index_id_end = index_id + index_span;
+      for (const auto d : indices) {
         uint32 cf_flags = 0;
-        if (!dict_manager.get_cf_flags(cf_id, &cf_flags)) {
+        if (!dict_manager.get_cf_flags(d.cf_id, &cf_flags)) {
           sql_print_error("RocksDB: Failed to get column family flags "
                           "from cf id %u. MyRocks data dictionary may "
                           "get corrupted.",
-                          cf_id);
+                          d.cf_id);
           abort_with_stack_traces();
         }
-        rocksdb::ColumnFamilyHandle *cfh = cf_manager.get_cf(cf_id);
+        rocksdb::ColumnFamilyHandle *cfh = cf_manager.get_cf(d.cf_id);
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+          finished.insert(d);
+          continue;
+        }
+        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
+          // CompactRange is unfriendly to universal compaction
+          continue;
+        }
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
-        rocksdb::Range range = get_range(index_id, buf,
-                                         is_reverse_cf ? index_span : 0,
-                                         is_reverse_cf ? 0 : index_span);
+        rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
+                                         is_reverse_cf ? 0 : 1);
         rocksdb::CompactRangeOptions compact_range_options;
         compact_range_options.bottommost_level_compaction =
             rocksdb::BottommostLevelCompaction::kForce;
         compact_range_options.exclusive_manual_compaction = false;
-        rocksdb::Status status = DeleteFilesInRange(rdb->GetBaseDB(), cfh,
-                                                    &range.start, &range.limit);
+        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+        status = rdb->CompactRange(compact_range_options, cfh, &range.start,
+                                   &range.limit);
         if (!status.ok()) {
           if (status.IsShutdownInProgress()) {
             break;
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        bool is_finished = true;
-        for (GL_INDEX_ID d = {cf_id, index_id}; d.index_id != index_id_end;
-             ++d.index_id) {
-          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-            finished.insert(d);
-          }
-          else {
-            is_finished = false;
-          }
-        }
-        if (is_finished)
-        {
-          continue;
-        }
-        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
-        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
-          // called empty check before , nothing to do ...
-        }
-        else {
-          status = rdb->CompactRange(compact_range_options, cfh, &range.start,
-                                     &range.limit);
-          if (!status.ok()) {
-            if (status.IsShutdownInProgress()) {
-              break;
-            }
-            rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
-          }
-          for (GL_INDEX_ID d = {cf_id, index_id}; d.index_id != index_id_end;
-               ++d.index_id) {
-            if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-              finished.insert(d);
-            }
-          }
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+          finished.insert(d);
         }
       }
 
