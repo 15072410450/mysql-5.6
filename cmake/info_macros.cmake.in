@@ -70,7 +70,7 @@ MACRO(CREATE_INFO_SRC target_dir)
 
     EXECUTE_PROCESS(
       COMMAND ${GIT_EXECUTABLE} log -1
-      --pretty="commit: %H%ndate: %ci%nbuild-date: ${bdate} %nshort: %h%nbranch: ${bname}"
+      #--pretty="commit: %H%ndate: %ci%nbuild-date: ${bdate} %nshort: %h%nbranch: ${bname}"
       WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
       OUTPUT_VARIABLE VERSION_INFO
     )
