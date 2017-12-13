@@ -54,3 +54,4 @@ binlog-format=ROW
 secure_file_priv=""
 rocksdb_commit_in_the_middle=ON
 rocksdb_bulk_load_size=1000
+rocksdb_strict_collation_check=OFF
