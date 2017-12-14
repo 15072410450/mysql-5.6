@@ -395,16 +395,13 @@ static int rdb_i_s_cfoptions_fill_table(
   bool ret;
 
   Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
+  rocksdb::DB *const rdb = rdb_get_rocksdb_db();
 
-  for (const auto &cf_name : cf_manager.get_cf_names()) {
+  for (const auto cf_handle: cf_manager.get_all_cf()) {
+    const std::string& cf_name = cf_handle->GetName();
     std::string val;
-    rocksdb::ColumnFamilyOptions opts;
-    cf_manager.get_cf_options(cf_name, &opts);
-
-    rocksdb::DB *const rdb = rdb_get_rocksdb_db();
-    const rocksdb::Options& opt = rdb->GetOptions();
-    auto tfact = opt.table_factory.get();
-
+    const rocksdb::ColumnFamilyOptions opts = rdb->GetOptions(cf_handle);
+    auto tfact = opts.table_factory.get();
     std::vector<std::pair<std::string, std::string>> cf_option_types = {
         {"COMPARATOR", opts.comparator == nullptr
                            ? "NULL"
