@@ -644,6 +644,11 @@ IF(NOT INSTALL_LAYOUT MATCHES "RPM")
   )
 ENDIF()
 
+INSTALL(FILES init.sh DESTINATION .)
+INSTALL(FILES start.sh DESTINATION .)
+INSTALL(FILES start_for_bulk_load.sh DESTINATION .)
+INSTALL(FILES my.cnf-terark-template DESTINATION .)
+
 INCLUDE(CPack)
 
 # C compiler flags consist of:
