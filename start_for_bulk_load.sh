@@ -4,7 +4,7 @@ DIR="$(cd $(dirname $0);pwd)"
 
 MemTable=8G # **Large, for bulk load only**
 
-env TerarkZipTable_localTempDir=/ssd/mysql/terark-temp \
+env TerarkZipTable_localTempDir=$DIR/terark-temp \
     TerarkZipTable_keyPrefixLen=4 \
     TerarkZipTable_offsetArrayBlockUnits=128 \
 	TerarkZipTable_base_background_compactions=1 \
