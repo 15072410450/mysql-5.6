@@ -23,6 +23,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/rocksdb
   ${CMAKE_SOURCE_DIR}/rocksdb/include
   ${CMAKE_SOURCE_DIR}/rocksdb/third-party/gtest-1.7.0/fused-src
+  ${CMAKE_SOURCE_DIR}/../terark-zip-rocksdb/src
 )
 
 # This is a strong requirement coming from RocksDB. No conditional checks here.
@@ -109,6 +110,21 @@ IF (WITH_TBB)
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   ${WITH_TBB}/lib/libtbb${PIC_EXT}.a)
   ADD_DEFINITIONS(-DTBB)
+ENDIF()
+# terocks
+IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
+  SET(rocksdb_static_libs ${rocksdb_static_libs}
+  -Wl,--whole-archive
+  $ENV{WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-r.a
+  $ENV{WITH_TERARKDB}/lib_static/libterark-zbs-r.a
+  $ENV{WITH_TERARKDB}/lib_static/libterark-fsa-r.a
+  $ENV{WITH_TERARKDB}/lib_static/libterark-core-r.a
+  -Wl,--no-whole-archive
+  -lcrypto
+  ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
+  -ldl
+  -lsnappy
+  -lgomp -lz)
 ENDIF()
 
 CHECK_INCLUDE_FILES(zlib.h HAVE_ZLIB_H)

@@ -198,7 +198,12 @@ static int rocksdb_compact_column_family(THD *const thd,
     if (cfh != nullptr && rdb != nullptr) {
       sql_print_information("RocksDB: Manual compaction of column family: %s\n",
                             cf);
-      rdb->CompactRange(getCompactRangeOptions(), cfh, nullptr, nullptr);
+      const rocksdb::Status s =
+        rdb->CompactRange(getCompactRangeOptions(), cfh, nullptr, nullptr);
+      if (!s.ok()) {
+        rdb_log_status_error(s);
+        return HA_EXIT_FAILURE;
+      }
     }
   }
   return HA_EXIT_SUCCESS;
@@ -451,6 +456,8 @@ static char *rocksdb_wal_dir;
 static char *rocksdb_persistent_cache_path;
 static uint64_t rocksdb_index_type;
 static uint32_t rocksdb_flush_log_at_trx_commit;
+static char rocksdb_background_sync;
+static uint32_t rocksdb_system_cf_background_flush_interval;
 static uint32_t rocksdb_debug_optimizer_n_rows;
 static my_bool rocksdb_force_compute_memtable_stats;
 static uint32_t rocksdb_force_compute_memtable_stats_cachetime;
@@ -1216,6 +1223,13 @@ static MYSQL_SYSVAR_UINT(flush_log_at_trx_commit,
                          /* min */ FLUSH_LOG_NEVER,
                          /* max */ FLUSH_LOG_BACKGROUND, 0);
 
+static MYSQL_SYSVAR_UINT(system_cf_background_flush_interval,
+                         rocksdb_system_cf_background_flush_interval,
+                         PLUGIN_VAR_RQCMDARG,
+                         "interval(seconds) of background flush column family "
+                         "'__system__' for RocksDB . 0 to disable", nullptr,
+                         nullptr, 120, 0, 3600, 0);
+
 static MYSQL_THDVAR_BOOL(write_disable_wal, PLUGIN_VAR_RQCMDARG,
                          "WriteOptions::disableWAL for RocksDB", nullptr,
                          nullptr, rocksdb::WriteOptions().disableWAL);
@@ -1594,6 +1608,8 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(override_cf_options),
     MYSQL_SYSVAR(update_cf_options),
 
+    MYSQL_SYSVAR(background_sync),
+    MYSQL_SYSVAR(system_cf_background_flush_interval),
     MYSQL_SYSVAR(flush_log_at_trx_commit),
     MYSQL_SYSVAR(write_disable_wal),
     MYSQL_SYSVAR(write_ignore_missing_column_families),
@@ -4297,11 +4313,16 @@ static int rocksdb_init_func(void *const p) {
   rocksdb::Options main_opts(*rocksdb_db_options,
                              cf_options_map->get_defaults());
 
+  main_opts.allow_mmap_reads = true;
+  main_opts.env->SetBackgroundThreads(main_opts.max_background_flushes,
+                                      rocksdb::Env::Priority::HIGH);
+  main_opts.env->SetBackgroundThreads(main_opts.max_background_compactions,
+                                      rocksdb::Env::Priority::LOW);
   rocksdb::TransactionDBOptions tx_db_options;
   tx_db_options.transaction_lock_timeout = 2; // 2 seconds
   tx_db_options.custom_mutex_factory = std::make_shared<Rdb_mutex_factory>();
 
-  status =
+  /*status =
       check_rocksdb_options_compatibility(rocksdb_datadir, main_opts, cf_descr);
 
   // We won't start if we'll determine that there's a chance of data corruption
@@ -4311,7 +4332,7 @@ static int rocksdb_init_func(void *const p) {
         status, "Compatibility check against existing database options failed");
     rdb_open_tables.free_hash();
     DBUG_RETURN(HA_EXIT_FAILURE);
-  }
+  }*/
 
   status = rocksdb::TransactionDB::Open(
       main_opts, tx_db_options, rocksdb_datadir, cf_descr, &cf_handles, &rdb);
@@ -10206,6 +10227,44 @@ void Rdb_drop_index_thread::run() {
     std::unordered_set<GL_INDEX_ID> indices;
     dict_manager.get_ongoing_drop_indexes(&indices);
     if (!indices.empty()) {
+      rocksdb::Status status;
+      // flowing code copy from *rdb_i_s_index_file_map_fill_table*
+      // check GL_INDEX_ID in sst is necessary or not
+      const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
+      std::vector<Rdb_index_stats> stats;
+      for (const auto &cf_handle : cf_manager.get_all_cf()) {
+        rocksdb::TablePropertiesCollection table_props_collection;
+        status = rdb->GetPropertiesOfAllTables(cf_handle, &table_props_collection);
+        if(!status.ok()) {
+          continue;
+        }
+        for(const auto &props : table_props_collection) {
+          stats.clear();
+          Rdb_tbl_prop_coll::read_stats_from_tbl_props(props.second, &stats);
+          bool can_drop = true;
+          for(auto it : stats) {
+            if (indices.find(it.m_gl_index_id) == indices.end()) {
+              can_drop = false;
+              break;
+            }
+          }
+          if (can_drop) {
+            std::string sst_name = props.first;
+            const size_t pos = sst_name.rfind('/');
+            if (pos != std::string::npos) {
+              sst_name = sst_name.substr(pos + 1);
+            }
+            status = rdb->DeleteFile(sst_name);
+            if (!status.ok()) {
+              if (status.IsShutdownInProgress()) {
+                break;
+              }
+              rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
+            }
+          }
+        }
+      }
+      // we have already removed unnecessary files , don't need DeleteFilesInRange
       std::unordered_set<GL_INDEX_ID> finished;
       rocksdb::ReadOptions read_opts;
       read_opts.total_order_seek = true; // disable bloom filter
@@ -10223,22 +10282,18 @@ void Rdb_drop_index_thread::run() {
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
-        {
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
           finished.insert(d);
+          continue;
+        }
+        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
+          // CompactRange is unfriendly to universal compaction
           continue;
         }
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
         rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
                                          is_reverse_cf ? 0 : 1);
-        rocksdb::Status status = DeleteFilesInRange(rdb->GetBaseDB(), cfh,
-                                                    &range.start, &range.limit);
-        if (!status.ok()) {
-          if (status.IsShutdownInProgress()) {
-            break;
-          }
-          rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
-        }
         status = rdb->CompactRange(getCompactRangeOptions(), cfh, &range.start,
                                    &range.limit);
         if (!status.ok()) {
@@ -10247,8 +10302,7 @@ void Rdb_drop_index_thread::run() {
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
-        {
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
           finished.insert(d);
         }
       }
@@ -10623,11 +10677,15 @@ int ha_rocksdb::optimize(THD *const thd, HA_CHECK_OPT *const check_opt) {
   for (uint i = 0; i < table->s->keys; i++) {
     uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
     auto range = get_range(i, buf);
-    const rocksdb::Status s = rdb->CompactRange(getCompactRangeOptions(),
-                                                m_key_descr_arr[i]->get_cf(),
-                                                &range.start, &range.limit);
-    if (!s.ok()) {
-      DBUG_RETURN(rdb_error_to_mysql(s));
+    auto cfh = m_key_descr_arr[i]->get_cf();
+    rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+    if (cf_options.compaction_style != rocksdb::kCompactionStyleUniversal) {
+      const rocksdb::Status s = rdb->CompactRange(getCompactRangeOptions(),
+                                                  cfh,
+                                                  &range.start, &range.limit);
+      if (!s.ok()) {
+        DBUG_RETURN(rdb_error_to_mysql(s));
+      }
     }
   }
 
@@ -12093,6 +12151,7 @@ static SHOW_VAR rocksdb_status_vars[] = {
 void Rdb_background_thread::run() {
   // How many seconds to wait till flushing the WAL next time.
   const int WAKE_UP_INTERVAL = 1;
+  uint32_t flush_tick = 0;
 
   timespec ts_next_sync;
   clock_gettime(CLOCK_REALTIME, &ts_next_sync);
@@ -12140,6 +12199,20 @@ void Rdb_background_thread::run() {
       if (!s.ok()) {
         rdb_handle_io_error(s, RDB_IO_ERROR_BG_THREAD);
       }
+    }
+    // Flush __system__
+    if (rdb && rocksdb_system_cf_background_flush_interval > 0
+        && flush_tick++ >= rocksdb_system_cf_background_flush_interval) {
+      const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
+      rocksdb::ColumnFamilyHandle *cfh;
+      bool is_automatic;
+      cfh = cf_manager.get_cf(DEFAULT_SYSTEM_CF_NAME, "", nullptr, &is_automatic);
+      if (cfh != nullptr) {
+        rocksdb::FlushOptions fo;
+        fo.wait = false;
+        rdb->Flush(fo, cfh);
+      }
+      flush_tick = 0;
     }
 
     // Set the next timestamp for mysql_cond_timedwait() (which ends up calling
@@ -12855,3 +12928,4 @@ mysql_declare_plugin(rocksdb_se){
     myrocks::rdb_i_s_global_info, myrocks::rdb_i_s_ddl,
     myrocks::rdb_i_s_index_file_map, myrocks::rdb_i_s_lock_info,
     myrocks::rdb_i_s_trx_info, myrocks::rdb_i_s_deadlock_info mysql_declare_plugin_end;
+    myrocks::rdb_i_s_trx_info, myrocks::rdb_i_s_tfoptions mysql_declare_plugin_end;

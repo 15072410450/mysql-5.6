@@ -8000,7 +8000,7 @@ std::unordered_set<std::string> split_into_set(const std::string& input,
 }
 
 // Split a string based on a delimiter.  Two delimiters in a row will not add
-// an empty string in the set.
+// an empty string in the vector.
 std::vector<std::string> split_into_vector(const std::string& input,
                                            char delimiter)
 {
@@ -8013,7 +8013,7 @@ std::vector<std::string> split_into_vector(const std::string& input,
   {
     // If there is any data since the last delimiter add it to the list
     if (pos > start)
-      elems.push_back(input.substr(start, pos - start));
+      elems.emplace_back(input.substr(start, pos - start));
 
     // Set our start position to the character after the delimiter
     start = pos + 1;
@@ -8021,7 +8021,7 @@ std::vector<std::string> split_into_vector(const std::string& input,
 
   // Add a possible string since the last delimiter
   if (input.length() > start)
-    elems.push_back(input.substr(start));
+    elems.emplace_back(input.substr(start));
 
   // Return the resulting list back to the caller
   return elems;

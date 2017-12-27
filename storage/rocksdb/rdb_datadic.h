@@ -1359,6 +1359,8 @@ public:
     return is_index_operation_ongoing(gl_index_id,
                                       Rdb_key_def::DDL_CREATE_INDEX_ONGOING);
   }
+  void get_all_dropped_index_ongoing(
+      uint32_t cf_id, void *user_data, void(*add_index_id)(void *, uint32)) const;
 
   bool get_max_index_id(uint32_t *const index_id) const;
   bool update_max_index_id(rocksdb::WriteBatch *const batch,
