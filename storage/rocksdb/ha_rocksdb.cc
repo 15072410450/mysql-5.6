@@ -456,7 +456,6 @@ static char *rocksdb_wal_dir;
 static char *rocksdb_persistent_cache_path;
 static uint64_t rocksdb_index_type;
 static uint32_t rocksdb_flush_log_at_trx_commit;
-static char rocksdb_background_sync;
 static uint32_t rocksdb_system_cf_background_flush_interval;
 static uint32_t rocksdb_debug_optimizer_n_rows;
 static my_bool rocksdb_force_compute_memtable_stats;
@@ -1608,7 +1607,6 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(override_cf_options),
     MYSQL_SYSVAR(update_cf_options),
 
-    MYSQL_SYSVAR(background_sync),
     MYSQL_SYSVAR(system_cf_background_flush_interval),
     MYSQL_SYSVAR(flush_log_at_trx_commit),
     MYSQL_SYSVAR(write_disable_wal),
@@ -4322,7 +4320,9 @@ static int rocksdb_init_func(void *const p) {
   tx_db_options.transaction_lock_timeout = 2; // 2 seconds
   tx_db_options.custom_mutex_factory = std::make_shared<Rdb_mutex_factory>();
 
-  /*status =
+/*
+  // TerarkZipTable is not BlockBasedTable, skip the check
+  status =
       check_rocksdb_options_compatibility(rocksdb_datadir, main_opts, cf_descr);
 
   // We won't start if we'll determine that there's a chance of data corruption
@@ -4332,7 +4332,8 @@ static int rocksdb_init_func(void *const p) {
         status, "Compatibility check against existing database options failed");
     rdb_open_tables.free_hash();
     DBUG_RETURN(HA_EXIT_FAILURE);
-  }*/
+  }
+*/
 
   status = rocksdb::TransactionDB::Open(
       main_opts, tx_db_options, rocksdb_datadir, cf_descr, &cf_handles, &rdb);
@@ -10282,7 +10283,8 @@ void Rdb_drop_index_thread::run() {
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
+        {
           finished.insert(d);
           continue;
         }
@@ -10302,7 +10304,8 @@ void Rdb_drop_index_thread::run() {
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
+        {
           finished.insert(d);
         }
       }
@@ -12205,8 +12208,7 @@ void Rdb_background_thread::run() {
         && flush_tick++ >= rocksdb_system_cf_background_flush_interval) {
       const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
       rocksdb::ColumnFamilyHandle *cfh;
-      bool is_automatic;
-      cfh = cf_manager.get_cf(DEFAULT_SYSTEM_CF_NAME, "", nullptr, &is_automatic);
+      cfh = cf_manager.get_cf(DEFAULT_SYSTEM_CF_NAME);
       if (cfh != nullptr) {
         rocksdb::FlushOptions fo;
         fo.wait = false;
@@ -12927,5 +12929,5 @@ mysql_declare_plugin(rocksdb_se){
     myrocks::rdb_i_s_cfoptions, myrocks::rdb_i_s_compact_stats,
     myrocks::rdb_i_s_global_info, myrocks::rdb_i_s_ddl,
     myrocks::rdb_i_s_index_file_map, myrocks::rdb_i_s_lock_info,
+    myrocks::rdb_i_s_tfoptions,
     myrocks::rdb_i_s_trx_info, myrocks::rdb_i_s_deadlock_info mysql_declare_plugin_end;
-    myrocks::rdb_i_s_trx_info, myrocks::rdb_i_s_tfoptions mysql_declare_plugin_end;

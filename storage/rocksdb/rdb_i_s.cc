@@ -440,7 +440,6 @@ static int rdb_i_s_cfoptions_fill_table(
   }
 
   Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
-  rocksdb::DB *const rdb = rdb_get_rocksdb_db();
 
   for (const auto cf_handle: cf_manager.get_all_cf()) {
     const std::string& cf_name = cf_handle->GetName();
