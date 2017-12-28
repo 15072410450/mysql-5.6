@@ -16,7 +16,7 @@
 # datadir = .....
 # port = .....
 # server_id = .....
-# socket = .....
+socket =__MYSQL_INSTALL_DIR__/data/mysql.sock 
 
 # Remove leading # to set options mainly useful for reporting servers.
 # The server defaults are faster for transactions and fast SELECTs.
@@ -41,14 +41,14 @@ bind-address = 0.0.0.0
 back_log = 600
 max_connections = 6000
 
-basedir = /usr/local/mysql-on-terarkdb-4.8-bmi2-0
-log_error        = /usr/local/mysql-on-terarkdb-4.8-bmi2-0/log/mysql_error.log
-# general_log_file = /usr/local/mysql-on-terarkdb-4.8-bmi2-0/log/mysql.log
+basedir = __MYSQL_INSTALL_DIR__
+log_error        = __MYSQL_INSTALL_DIR__/log/mysql_error.log
+# general_log_file = __MYSQL_INSTALL_DIR__/log/mysql.log
 # general_log      = 1
 
-datadir = /usr/local/mysql-on-terarkdb-4.8-bmi2-0/data
-log-bin = /usr/local/mysql-on-terarkdb-4.8-bmi2-0/log/mysql-bin
-pid-file = /usr/local/mysql-on-terarkdb-4.8-bmi2-0/data/mysql.pid
+datadir = __MYSQL_INSTALL_DIR__/data
+log-bin = __MYSQL_INSTALL_DIR__/log/mysql-bin
+pid-file = __MYSQL_INSTALL_DIR__/data/mysql.pid
 
 binlog-format=ROW
 secure_file_priv=""

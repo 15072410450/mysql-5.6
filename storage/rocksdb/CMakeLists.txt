@@ -121,7 +121,7 @@ IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   $ENV{WITH_TERARKDB}/lib_static/libterark-core-r.a
   -Wl,--no-whole-archive
   -lcrypto
-  ${CMAKE_SOURCE_DIR}/build/storage/rocksdb/librocksdb_se.a
+  ${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
   -ldl
   -lsnappy
   -lgomp -lz)

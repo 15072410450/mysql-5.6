@@ -1,27 +1,30 @@
 #/bin/bash
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
+PackageDir=$(cd $(dirname $0) && pwd)
 
 if [ "$1" = "prepare" ]; then
     if [ -z "$2" ]; then
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$DIR:g" support-files/mysql.server
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$DIR:g" bin/mysqld_safe
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$DIR:g" my.cnf
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$DIR:g" start.sh
-        echo "done"
-    else
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$2:g" support-files/mysql.server
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$2:g" bin/mysqld_safe
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$2:g" my.cnf
-        sed -i "s:/usr/local/mysql-on-terarkdb-4.8-bmi2-0:$2:g" start.sh
-        echo "done"
-    fi
+		DataBaseDir=$PackageDir
+	else
+		mkdir -p $2
+		DataBaseDir=`cd $2 && pwd`
+	fi
+	mkdir -p $DataBaseDir/terark-temp
+	mkdir -p $DataBaseDir/data
+	mkdir -p $DataBaseDir/log
+	for file in `cat $PackageDir/substitue_file_list.txt` my.cnf;
+	do
+        sed -e "s:__MYSQL_INSTALL_DIR__/data:$DataBaseDir/data:g" \
+			-e "s:__MYSQL_INSTALL_DIR__/log:$DataBaseDir/log:g" \
+			-e "s:__MYSQL_INSTALL_DIR__:$PackageDir:g" \
+			-i $PackageDir/$file
+	done
 elif [ "$1" = "init" ]; then
     echo "start initializing..."
-    $DIR/scripts/mysql_install_db \
-	--defaults-file=$DIR/my.cnf
+	cd $PackageDir # mysql_install_db bug, must cd to this dir
+    $PackageDir/scripts/mysql_install_db --defaults-file=$PackageDir/my.cnf
     echo "done"
 else
-    echo "usage: ./init.sh prepare|init"
+    echo "usage: ./init.sh prepare [DataBaseDir] | init"
 fi
 
