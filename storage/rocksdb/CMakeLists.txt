@@ -83,8 +83,12 @@ ENDIF()
 
 SET(rocksdb_static_libs )
 IF (WITH_SNAPPY)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_SNAPPY}/lib/libsnappy${PIC_EXT}.a)
+  IF (EXISTS ${WITH_SNAPPY}/lib64/libsnappy${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_SNAPPY}/lib64/libsnappy${PIC_EXT}.a)
+  ELSE()
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_SNAPPY}/lib/libsnappy${PIC_EXT}.a)
+  ENDIF()
   ADD_DEFINITIONS(-DSNAPPY)
 ENDIF()
 
@@ -95,35 +99,48 @@ IF (WITH_LZ4)
 ENDIF()
 
 IF (WITH_BZ2)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_BZ2}/lib/libbz2${PIC_EXT}.a)
+  IF(EXISTS ${WITH_BZ2}/lib64/libbz2${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_BZ2}/lib64/libbz2${PIC_EXT}.a)
+  ELSE()
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_BZ2}/lib/libbz2${PIC_EXT}.a)
+  ENDIF()
   ADD_DEFINITIONS(-DBZIP2)
 ENDIF()
 
 IF (WITH_ZSTD)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_ZSTD}/lib/libzstd${PIC_EXT}.a)
+  IF(EXISTS ${WITH_ZSTD}/lib64/libzstd${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_ZSTD}/lib64/libzstd${PIC_EXT}.a)
+  ELSE()
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_ZSTD}/lib/libzstd${PIC_EXT}.a)
+  ENDIF()
   ADD_DEFINITIONS(-DZSTD)
 ENDIF()
 
 IF (WITH_TBB)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_TBB}/lib/libtbb${PIC_EXT}.a)
+  IF(EXISTS ${WITH_TBB}/lib64/libtbb${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_TBB}/lib64/libtbb${PIC_EXT}.a)
+  ELSE()
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_TBB}/lib/libtbb${PIC_EXT}.a)
+  ENDIF()
   ADD_DEFINITIONS(-DTBB)
 ENDIF()
+
 # terocks
 IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
-  $ENV{WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-r.a
-  $ENV{WITH_TERARKDB}/lib_static/libterark-zbs-r.a
-  $ENV{WITH_TERARKDB}/lib_static/libterark-fsa-r.a
-  $ENV{WITH_TERARKDB}/lib_static/libterark-core-r.a
+  -L$ENV{WITH_TERARKDB}/lib_static
+  -lterark-zip-rocksdb-r
+  -lterark-zbs-r
+  -lterark-fsa-r
+  -lterark-core-r
   -Wl,--no-whole-archive
   -lcrypto
   ${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
   -ldl
-  -lsnappy
   -lgomp -lz)
 ENDIF()
 
