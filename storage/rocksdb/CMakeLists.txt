@@ -128,11 +128,17 @@ IF (WITH_TBB)
   ADD_DEFINITIONS(-DTBB)
 ENDIF()
 
+IF ("${WITH_TERARKDB}" STREQUAL "")
+  IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
+    SET(WITH_TERARKDB $ENV{WITH_TERARKDB})
+  ENDIF()
+ENDIF()
+
 # terocks
-IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
+IF (NOT "${WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
-  -L$ENV{WITH_TERARKDB}/lib_static
+  -L${WITH_TERARKDB}/lib_static
   -lterark-zip-rocksdb-r
   -lterark-zbs-r
   -lterark-fsa-r
