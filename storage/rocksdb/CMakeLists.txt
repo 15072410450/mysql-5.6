@@ -134,15 +134,21 @@ IF ("${WITH_TERARKDB}" STREQUAL "")
   ENDIF()
 ENDIF()
 
+IF ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+  SET(TERARK_LIB_SUFFIX "d")
+ELSE()
+  SET(TERARK_LIB_SUFFIX "r")
+ENDIF()
+
 # terocks
 IF (NOT "${WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
   -L${WITH_TERARKDB}/lib_static
-  -lterark-zip-rocksdb-r
-  -lterark-zbs-r
-  -lterark-fsa-r
-  -lterark-core-r
+  -lterark-zip-rocksdb-${TERARK_LIB_SUFFIX}
+  -lterark-zbs-${TERARK_LIB_SUFFIX}
+  -lterark-fsa-${TERARK_LIB_SUFFIX}
+  -lterark-core-${TERARK_LIB_SUFFIX}
   -Wl,--no-whole-archive
   -lcrypto
   ${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
