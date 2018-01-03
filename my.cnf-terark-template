@@ -50,7 +50,7 @@ datadir = __MYSQL_INSTALL_DIR__/data
 log-bin = __MYSQL_INSTALL_DIR__/log/mysql-bin
 pid-file = __MYSQL_INSTALL_DIR__/data/mysql.pid
 
-binlog-format=ROW
+#binlog-format=ROW
 secure_file_priv=""
 rocksdb_commit_in_the_middle=ON
 rocksdb_bulk_load_size=1000
