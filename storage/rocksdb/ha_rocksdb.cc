@@ -4974,7 +4974,22 @@ ha_rocksdb::ha_rocksdb(my_core::handlerton *const hton,
       m_eq_cond_upper_bound(nullptr), m_pack_buffer(nullptr),
       m_lock_rows(RDB_LOCK_NONE), m_keyread_only(FALSE), m_encoder_arr(nullptr),
       m_row_checksums_checked(0), m_in_rpl_delete_rows(false),
-      m_in_rpl_update_rows(false), m_force_skip_unique_check(false) {}
+      m_in_rpl_update_rows(false), m_force_skip_unique_check(false)
+{
+  m_skip_unique_check = false;
+  m_sk_match_length = 0;
+  m_dupp_errkey = 0;
+  m_null_bytes_in_rec = 0;
+  m_verify_row_debug_checksums = false;
+  m_use_read_free_rpl = false;
+  m_ttl_bytes_updated = false;
+  m_pk_key_parts = false;
+  m_store_row_debug_checksums = false;
+  m_rnd_scan_is_new_snapshot = false;
+  m_checksums_pct = false;
+  m_update_scope_is_valid = false;
+  m_skip_scan_it_next_call = false;
+}
 
 static const char *ha_rocksdb_exts[] = {NullS};
 
