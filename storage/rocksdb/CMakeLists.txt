@@ -144,11 +144,10 @@ ENDIF()
 IF (NOT "${WITH_TERARKDB}" STREQUAL "")
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
-  -L${WITH_TERARKDB}/lib_static
-  -lterark-zip-rocksdb-${TERARK_LIB_SUFFIX}
-  -lterark-zbs-${TERARK_LIB_SUFFIX}
-  -lterark-fsa-${TERARK_LIB_SUFFIX}
-  -lterark-core-${TERARK_LIB_SUFFIX}
+  ${WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-zbs-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-fsa-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-core-${TERARK_LIB_SUFFIX}.a
   -Wl,--no-whole-archive
   -lcrypto
   ${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
