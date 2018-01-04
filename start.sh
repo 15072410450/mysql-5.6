@@ -10,12 +10,12 @@ else
         exit 1
     fi
     TerarkTemp=`sed -n 's/^\s*datadir\s*=\s*\(.*\)/\1/p' $DIR/my.cnf`
-	if [ -z "$TerarkTemp" ]; then
-		echo datadir is not defined in config file: $DIR/my.cnf
-		exit 1
-	fi
+    if [ -z "$TerarkTemp" ]; then
+        echo datadir is not defined in config file: $DIR/my.cnf
+        exit 1
+    fi
     if [ "`basename $TerarkTemp`" = data ]; then
-		TerarkTemp=$(cd $(dirname $TerarkTemp);pwd)/terark-temp
+        TerarkTemp=$(cd $(dirname $TerarkTemp);pwd)/terark-temp
     fi
 fi
 if [ ! -d "$TerarkTemp" ]; then
@@ -29,7 +29,11 @@ env TerarkZipTable_localTempDir=$TerarkTemp \
     TerarkZipTable_indexCacheRatio=0.001 \
     TerarkZipTable_extendedConfigFile=$DIR/license \
     TerarkUseDivSufSort=1 \
-    $DIR/support-files/mysql.server start --defaults-file=$DIR/my.cnf
+    $DIR/support-files/mysql.server start \
+        --defaults-file=$DIR/my.cnf \
+        --character-sets-dir=$DIR/share/charsets \
+        --lc-messages_dir=$DIR/share \
+        --plugin-dir=$DIR/lib/plugin \
     
 
 #$DIR/support-files/mysql.server start --defaults-file=$DIR/my.cnf

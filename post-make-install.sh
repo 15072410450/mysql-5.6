@@ -1,5 +1,7 @@
 #/bin/bash
 
+set -e
+
 CodeDir=$(cd $(dirname $0) && pwd)
 BuildDir=$PWD
 

@@ -5,6 +5,8 @@ PackageDir=$(cd $(dirname $0) && pwd)
 if [ "$1" = "prepare" ]; then
     if [ -z "$2" ]; then
 		DataBaseDir=$PackageDir
+		echo usage $0 prepare databaseDir
+		exit 1
 	else
 		mkdir -p $2
 		DataBaseDir=`cd $2 && pwd`
