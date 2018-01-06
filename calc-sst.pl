@@ -39,6 +39,15 @@ while (<>) {
 	#print "max/sum = ", $F[$#F] / $smallsum, "\n";
 	my $max = $F[$#F];
 	if (scalar(@F) >= 2) {
-		printf("%9.6f  %9.6f  %9.6f ; %s\n", $sum / $max, $max / ($sum - $max), $max/$sum, join(' ', @F));
+		printf("%9.6f  %9.6f  %9.6f ;", $sum / $max, $max / ($sum - $max), $max/$sum);
+		for my $val (@F) {
+			if ($val < 1e9) {
+				printf(" %8.3f'M", $val/1e6);
+			}
+			else {
+				printf(" %8.3f'G", $val/1e9);
+			}
+		}
+		printf("\n");
 	}
 }
