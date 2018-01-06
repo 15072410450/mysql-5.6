@@ -3,9 +3,9 @@
 my %suf = (
 	KB => 1e3,
 	MB => 1e6,
+	GB => 1e9,
+	TB => 1e12,
 );
-print '$suf{MB} = ', $suf{MB}, "\n";
-print '$suf{KB} = ', $suf{KB}, "\n";
 while (<>) {
 	my @F=();
 	my $levels;
