@@ -8,9 +8,28 @@ print '$suf{MB} = ', $suf{MB}, "\n";
 print '$suf{KB} = ', $suf{KB}, "\n";
 while (<>) {
 	my @F=();
-   	while (/\((\d+)(.B)\)/g) {
-		my $mul = $suf{$2};
-	   	push @F, $1 * $suf{"$2"};
+	my $levels;
+	if (/Base level 0, inputs: \[([^\]]*)\]/) {
+		my $lev0 = $1;
+		$levels = $';
+		while ($lev0 =~ /\((\d+)(.B)\)/g) {
+			my $mul = $suf{$2};
+			push @F, $1 * $suf{"$2"};
+		}
+	}
+	else {
+		$levels = $_;
+	}
+	while ($levels =~ /\[([^\]]*)\]/g) {
+		my $lev = $1;
+		my $size = 0;
+		while ($lev =~ /\((\d+)(.B)\)/g) {
+			my $mul = $suf{$2};
+			$size += $1 * $suf{"$2"};
+		}
+		if ($size > 0) {
+			push @F, $size;
+		}
 	}
 	@F = sort {$a<=>$b} @F;
 	my $sum = 0;
