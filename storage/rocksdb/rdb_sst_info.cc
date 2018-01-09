@@ -153,7 +153,7 @@ rocksdb::Status Rdb_sst_file_ordered::Rdb_sst_file::commit() {
     rocksdb::IngestExternalFileOptions opts;
     opts.move_files = true;
     opts.snapshot_consistency = false;
-    opts.allow_global_seqno = false;
+    opts.allow_global_seqno = true;
     opts.allow_blocking_flush = false;
     s = m_db->IngestExternalFile(m_cf, {m_name}, opts);
 
