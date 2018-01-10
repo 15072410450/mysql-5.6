@@ -1,6 +1,6 @@
-[submodule "rqg"]
-	path = rqg
-	url = https://github.com/yoshinorim/rqg.git
 [submodule "rocksdb"]
 	path = rocksdb
 	url = https://github.com/Terark/rocksdb.git
+[submodule "rqg"]
+	path = rqg
+	url = https://github.com/yoshinorim/rqg.git
