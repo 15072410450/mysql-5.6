@@ -140,8 +140,9 @@ ELSE()
   SET(TERARK_LIB_SUFFIX "r")
 ENDIF()
 
-# terocks
-IF (NOT "${WITH_TERARKDB}" STREQUAL "")
+IF ("${WITH_TERARKDB}" STREQUAL "")
+	message(FATAL_ERROR  "var WITH_TERARKDB must be defined")
+ELSE()
   SET(rocksdb_static_libs ${rocksdb_static_libs}
   -Wl,--whole-archive
   ${WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-${TERARK_LIB_SUFFIX}.a

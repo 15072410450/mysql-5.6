@@ -8,6 +8,7 @@ cmake .. \
  -DCMAKE_SKIP_BUILD_RPATH=ON \
  -DCMAKE_SKIP_INSTALL_RPATH=ON \
  -DCMAKE_BUILD_TYPE=$btype \
+ -DDISABLE_SHARED=1 \
  -DWITH_SSL=system \
  -DWITH_ZLIB=bundled \
  -DWITH_SNAPPY=/opt/gcc-4.8 \

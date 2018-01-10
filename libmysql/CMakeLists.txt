@@ -234,7 +234,6 @@ IF(UNIX)
     ${INSTALL_LIBDIR} Development)
 ENDIF()
 
-SET(DISABLE_SHARED 1)
 IF(NOT DISABLE_SHARED)
   # Merge several convenience libraries into one big fbmysqlclient
   # and link them together into shared library.
