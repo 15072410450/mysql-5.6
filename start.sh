@@ -28,6 +28,7 @@ env TerarkZipTable_localTempDir=$TerarkTemp \
     TerarkZipTable_offsetArrayBlockUnits=128 \
     TerarkZipTable_indexCacheRatio=0.001 \
     TerarkZipTable_extendedConfigFile=$DIR/license \
+    TerarkZipTable_level0_file_num_compaction_trigger=4 \
     TerarkUseDivSufSort=1 \
     $DIR/support-files/mysql.server start \
         --defaults-file=$DIR/my.cnf \
