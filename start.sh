@@ -25,10 +25,18 @@ fi
 
 env TerarkZipTable_localTempDir=$TerarkTemp \
     TerarkZipTable_keyPrefixLen=4 \
+    TerarkZipTable_oldOffsetOf=0 \
+    TerarkZipTable_enable_partial_remove=1 \
     TerarkZipTable_offsetArrayBlockUnits=128 \
     TerarkZipTable_indexCacheRatio=0.001 \
+    TerarkZipTable_sampleRatio=0.02 \
     TerarkZipTable_extendedConfigFile=$DIR/license \
-    TerarkZipTable_level0_file_num_compaction_trigger=4 \
+    TerarkZipTable_write_buffer_size=2G \
+    TerarkZipTable_target_file_size_base=10G \
+    TerarkZipTable_level0_file_num_compaction_trigger=5 \
+    TerarkZipTable_level0_slowdown_writes_trigger=30 \
+    TerarkZipTable_level0_stop_writes_trigger=60 \
+    TerarkZipTable_max_subcompactions=2 \
     TerarkUseDivSufSort=1 \
     $DIR/support-files/mysql.server start \
         --defaults-file=$DIR/my.cnf \
