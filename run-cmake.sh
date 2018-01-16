@@ -1,10 +1,14 @@
 
 COMPILER=`sh ../../terark/get-compiler-name.sh`
+if [ -z "$COMPILER" ]; then
+	echo COMPILER is empty 1>&2
+	exit
+fi
 if [ -z "$BMI2" ]; then
 	BMI2=`sh ../../terark/cpu_has_bmi2.sh`
 fi
-ln -s ../../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-${COMPILER}-bmi2-${BMI2} terark-zip-rocksdb-pkg
-ln -s ../../snappy/package-dir snappy-pkg
+ln -sf ../../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-${COMPILER}-bmi2-${BMI2} terark-zip-rocksdb-pkg
+ln -sf ../../snappy/package-dir snappy-pkg
 btype=MinSizeRel
 btype=Release
 btype=RelWithDebInfo
