@@ -10211,7 +10211,6 @@ static bool is_myrocks_index_empty(
 /*
   Drop index thread's main logic
 */
-
 void Rdb_drop_index_thread::run() {
   RDB_MUTEX_LOCK_CHECK(m_signal_mutex);
 
@@ -10243,44 +10242,6 @@ void Rdb_drop_index_thread::run() {
     std::unordered_set<GL_INDEX_ID> indices;
     dict_manager.get_ongoing_drop_indexes(&indices);
     if (!indices.empty()) {
-      rocksdb::Status status;
-      // flowing code copy from *rdb_i_s_index_file_map_fill_table*
-      // check GL_INDEX_ID in sst is necessary or not
-      const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
-      std::vector<Rdb_index_stats> stats;
-      for (const auto &cf_handle : cf_manager.get_all_cf()) {
-        rocksdb::TablePropertiesCollection table_props_collection;
-        status = rdb->GetPropertiesOfAllTables(cf_handle, &table_props_collection);
-        if(!status.ok()) {
-          continue;
-        }
-        for(const auto &props : table_props_collection) {
-          stats.clear();
-          Rdb_tbl_prop_coll::read_stats_from_tbl_props(props.second, &stats);
-          bool can_drop = true;
-          for(auto it : stats) {
-            if (indices.find(it.m_gl_index_id) == indices.end()) {
-              can_drop = false;
-              break;
-            }
-          }
-          if (can_drop) {
-            std::string sst_name = props.first;
-            const size_t pos = sst_name.rfind('/');
-            if (pos != std::string::npos) {
-              sst_name = sst_name.substr(pos + 1);
-            }
-            status = rdb->DeleteFile(sst_name);
-            if (!status.ok()) {
-              if (status.IsShutdownInProgress()) {
-                break;
-              }
-              rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
-            }
-          }
-        }
-      }
-      // we have already removed unnecessary files , don't need DeleteFilesInRange
       std::unordered_set<GL_INDEX_ID> finished;
       rocksdb::ReadOptions read_opts;
       read_opts.total_order_seek = true; // disable bloom filter
@@ -10298,30 +10259,43 @@ void Rdb_drop_index_thread::run() {
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
-        {
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
           finished.insert(d);
-          continue;
-        }
-        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
-        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
-          // CompactRange is unfriendly to universal compaction
           continue;
         }
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
         rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
                                          is_reverse_cf ? 0 : 1);
-        status = rdb->CompactRange(getCompactRangeOptions(), cfh, &range.start,
-                                   &range.limit);
+        rocksdb::CompactRangeOptions compact_range_options;
+        compact_range_options.bottommost_level_compaction =
+            rocksdb::BottommostLevelCompaction::kForce;
+        compact_range_options.exclusive_manual_compaction = false;
+        rocksdb::Status status = DeleteFilesInRange(rdb->GetBaseDB(), cfh,
+                                                    &range.start, &range.limit);
         if (!status.ok()) {
           if (status.IsShutdownInProgress()) {
             break;
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
-        {
-          finished.insert(d);
+        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
+          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+            finished.insert(d);
+          }
+        }
+        else {
+          status = rdb->CompactRange(compact_range_options, cfh, &range.start,
+                                     &range.limit);
+          if (!status.ok()) {
+            if (status.IsShutdownInProgress()) {
+              break;
+            }
+            rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
+          }
+          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+            finished.insert(d);
+          }
         }
       }
 
