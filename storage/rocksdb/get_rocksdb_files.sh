@@ -6,7 +6,9 @@ echo "#include rocksdb/src.mk ##DO NOT include##
 all:
 	@echo \$(LIB_SOURCES)" > $MKFILE
 
-sed '/clock_cache.cc/d' rocksdb/src.mk >> $MKFILE
+#brain dead myrocks requires false used clock_cache
+#sed '/clock_cache.cc/d' rocksdb/src.mk >> $MKFILE
+cat rocksdb/src.mk >> $MKFILE
 
 for f in `make --makefile $MKFILE`
 do

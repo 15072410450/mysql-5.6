@@ -1,4 +1,10 @@
-ln -s ~/osc/terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-g++-4.8-bmi2-1 terark-zip-rocksdb-pkg
+
+COMPILER=`sh ../../terark/get-compiler-name.sh`
+if [ -z "$BMI2" ]; then
+	BMI2=`sh ../../terark/cpu_has_bmi2.sh`
+fi
+ln -s ../../terark-zip-rocksdb/pkg/terark-zip-rocksdb-Linux-x86_64-${COMPILER}-bmi2-${BMI2} terark-zip-rocksdb-pkg
+ln -s ../../snappy/package-dir snappy-pkg
 btype=MinSizeRel
 btype=Release
 btype=RelWithDebInfo
@@ -11,7 +17,7 @@ cmake .. \
  -DDISABLE_SHARED=1 \
  -DWITH_SSL=system \
  -DWITH_ZLIB=bundled \
- -DWITH_SNAPPY=/opt/gcc-4.8 \
+ -DWITH_SNAPPY=${PWD}/snappy-pkg \
  -DWITH_TERARKDB=${PWD}/terark-zip-rocksdb-pkg \
  -DMYSQL_MAINTAINER_MODE=0 \
  -DENABLED_LOCAL_INFILE=1 \
