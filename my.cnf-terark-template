@@ -61,4 +61,5 @@ secure_file_priv=""
 rocksdb_commit_in_the_middle=ON
 rocksdb_bulk_load_size=1000
 
+table_open_cache = 21397
 rocksdb_default_cf_options=memtable=rbtree
