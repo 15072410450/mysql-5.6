@@ -12,7 +12,7 @@ ln -sf ../../snappy/package-dir snappy-pkg
 btype=MinSizeRel
 btype=Release
 btype=RelWithDebInfo
-IGNORE_AIO_CHECK=1
+IGNORE_AIO_CHECK=0
 #btype=Debug
 cmake .. \
  -DCMAKE_VERBOSE_MAKEFILE=ON \
