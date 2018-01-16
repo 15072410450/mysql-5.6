@@ -12,6 +12,7 @@ ln -sf ../../snappy/package-dir snappy-pkg
 btype=MinSizeRel
 btype=Release
 btype=RelWithDebInfo
+IGNORE_AIO_CHECK=1
 #btype=Debug
 cmake .. \
  -DCMAKE_VERBOSE_MAKEFILE=ON \
@@ -19,6 +20,7 @@ cmake .. \
  -DCMAKE_SKIP_INSTALL_RPATH=ON \
  -DCMAKE_BUILD_TYPE=$btype \
  -DDISABLE_SHARED=1 \
+ -DIGNORE_AIO_CHECK=$IGNORE_AIO_CHECK \
  -DWITH_SSL=system \
  -DWITH_ZLIB=bundled \
  -DWITH_SNAPPY=${PWD}/snappy-pkg \
@@ -28,3 +30,7 @@ cmake .. \
  -DENABLE_DTRACE=0 \
  -DCMAKE_CXX_FLAGS="-march=native -DNDEBUG=1" \
  -DCMAKE_INSTALL_PREFIX=__MYSQL_INSTALL_DIR__
+
+if [ "$IGNORE_AIO_CHECK" -eq 1 ]; then
+	echo NOTE: IGNORE_AIO_CHECK = $IGNORE_AIO_CHECK
+fi
