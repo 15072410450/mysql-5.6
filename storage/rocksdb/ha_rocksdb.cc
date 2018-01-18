@@ -4111,7 +4111,7 @@ static int rocksdb_init_func(void *const p) {
                         HTON_SUPPORTS_EXTENDED_KEYS | HTON_CAN_RECREATE;
 
   DBUG_ASSERT(!mysqld_embedded);
-
+#if 0
   if (rocksdb_db_options->max_open_files > (long)open_files_limit ||
       rocksdb_db_options->max_open_files < 0) {
     sql_print_information("RocksDB: rocksdb_max_open_files should not be "
@@ -4120,7 +4120,7 @@ static int rocksdb_init_func(void *const p) {
                           "open_files_limit / 2.");
     rocksdb_db_options->max_open_files = open_files_limit / 2;
   }
-
+#endif
   rocksdb_stats = rocksdb::CreateDBStatistics();
   rocksdb_db_options->statistics = rocksdb_stats;
 
