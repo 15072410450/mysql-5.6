@@ -420,6 +420,14 @@ static int rocksdb_check_bulk_load(THD *const thd,
                                    void *save,
                                    struct st_mysql_value *value);
 
+
+static int rocksdb_check_bulk_load_index_type(
+    THD *const thd,
+    struct st_mysql_sys_var *var
+        MY_ATTRIBUTE((__unused__)),
+    void *save,
+    struct st_mysql_value *value);
+
 static int rocksdb_check_bulk_load_allow_unsorted(
     THD *const thd, struct st_mysql_sys_var *var MY_ATTRIBUTE((__unused__)),
     void *save, struct st_mysql_value *value);
@@ -493,6 +501,7 @@ static my_bool rocksdb_enable_bulk_load_api = 1;
 static my_bool rocksdb_print_snapshot_conflict_queries = 0;
 static my_bool rocksdb_large_prefix = 0;
 static my_bool rocksdb_allow_to_start_after_corruption = 0;
+static char *rocksdb_bulk_load_index_type;
 
 std::atomic<uint64_t> rocksdb_row_lock_deadlocks(0);
 std::atomic<uint64_t> rocksdb_row_lock_wait_timeouts(0);
@@ -1517,6 +1526,13 @@ static MYSQL_SYSVAR_BOOL(
     "Allow server still to start successfully even if RocksDB corruption is "
     "detected.",
     nullptr, nullptr, FALSE);
+
+
+static MYSQL_SYSVAR_STR(bulk_load_index_type, rocksdb_bulk_load_index_type,
+                        PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_MEMALLOC,
+                        "RocksDB bulk load index type",
+                        rocksdb_check_bulk_load_index_type, nullptr,
+                        "rbtree");
 
 static const int ROCKSDB_ASSUMED_KEY_VALUE_DISK_SIZE = 100;
 
@@ -2844,7 +2860,7 @@ public:
   explicit Rdb_writebatch_impl(THD *const thd)
       : Rdb_transaction(thd), m_batch(nullptr) {
     m_batch = new rocksdb::WriteBatchWithIndex(rocksdb::BytewiseComparator(), 0,
-                                               true);
+                                               true, rocksdb_bulk_load_index_type);
   }
 
   virtual ~Rdb_writebatch_impl() {
@@ -12633,6 +12649,29 @@ int rocksdb_check_bulk_load_allow_unsorted(
 
   *static_cast<bool *>(save) = new_value;
   return 0;
+}
+
+int rocksdb_check_bulk_load_index_type(
+    THD *const thd,
+    struct st_mysql_sys_var *var,
+    void *save,
+    struct st_mysql_value *value) {
+  char buff[STRING_BUFFER_USUAL_SIZE];
+  int len = sizeof(buff);
+
+  ut_a(save != NULL);
+  ut_a(value != NULL);
+
+  const char* name = value->val_str(value, buff, &len);
+  if (!name || !strlen(name)) {
+    return 1;
+  }
+  if (strcmp(name, "tbreee") != 0 && strcmp(name, "skiplist") != 0) {
+      my_error(ER_ERROR_WHEN_EXECUTING_COMMAND, MYF(0), "SET",
+               "bulk_load_index_type only support rbtree or skiplist");
+      return 1;
+  }
+  return(status);
 }
 
 static void rocksdb_set_max_background_jobs(THD *thd,
