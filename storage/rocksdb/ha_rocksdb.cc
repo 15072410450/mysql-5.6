@@ -1551,6 +1551,7 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(blind_delete_primary_key),
     MYSQL_SYSVAR(read_free_rpl_tables),
     MYSQL_SYSVAR(bulk_load_size),
+    MYSQL_SYSVAR(bulk_load_index_type),
     MYSQL_SYSVAR(merge_buf_size),
     MYSQL_SYSVAR(enable_bulk_load_api),
     MYSQL_SYSVAR(tmpdir),
@@ -2860,7 +2861,7 @@ public:
   explicit Rdb_writebatch_impl(THD *const thd)
       : Rdb_transaction(thd), m_batch(nullptr) {
     m_batch = new rocksdb::WriteBatchWithIndex(rocksdb::BytewiseComparator(), 0,
-                                               true, rocksdb_bulk_load_index_type);
+                                               true, 0, rocksdb_bulk_load_index_type);
   }
 
   virtual ~Rdb_writebatch_impl() {
@@ -12659,19 +12660,18 @@ int rocksdb_check_bulk_load_index_type(
   char buff[STRING_BUFFER_USUAL_SIZE];
   int len = sizeof(buff);
 
-  ut_a(save != NULL);
-  ut_a(value != NULL);
-
   const char* name = value->val_str(value, buff, &len);
   if (!name || !strlen(name)) {
     return 1;
   }
-  if (strcmp(name, "tbreee") != 0 && strcmp(name, "skiplist") != 0) {
+  if (strcmp(name, "rbtree") != 0 && strcmp(name, "skiplist") != 0) {
       my_error(ER_ERROR_WHEN_EXECUTING_COMMAND, MYF(0), "SET",
                "bulk_load_index_type only support rbtree or skiplist");
       return 1;
   }
-  return(status);
+  const char* new_name = my_strdup(name, MYF(0));
+  *static_cast<const char**>(save) = new_name;
+  return 0;
 }
 
 static void rocksdb_set_max_background_jobs(THD *thd,
