@@ -36,7 +36,7 @@ env TerarkZipTable_localTempDir=$TerarkTemp \
     TerarkZipTable_level0_file_num_compaction_trigger=5 \
     TerarkZipTable_level0_slowdown_writes_trigger=30 \
     TerarkZipTable_level0_stop_writes_trigger=60 \
-    TerarkZipTable_max_subcompactions=2 \
+    TerarkZipTable_max_subcompactions=1 \
     Terark_enableChecksumVerify=0 \
     TerarkUseDivSufSort=1 \
     $DIR/support-files/mysql.server start \
