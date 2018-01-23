@@ -1253,6 +1253,7 @@ static int rdb_i_s_index_file_map_fill_table(
         field[RDB_INDEX_FILE_MAP_FIELD::INDEX_NUMBER]->store(-1, true);
         field[RDB_INDEX_FILE_MAP_FIELD::NUM_ROWS]->store(-1, true);
         field[RDB_INDEX_FILE_MAP_FIELD::DATA_SIZE]->store(-1, true);
+        field[RDB_INDEX_FILE_MAP_FIELD::FILE_SIZE]->store(-1, true);
         field[RDB_INDEX_FILE_MAP_FIELD::ENTRY_DELETES]->store(-1, true);
         field[RDB_INDEX_FILE_MAP_FIELD::ENTRY_SINGLEDELETES]->store(-1, true);
         field[RDB_INDEX_FILE_MAP_FIELD::ENTRY_MERGES]->store(-1, true);
