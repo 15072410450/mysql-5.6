@@ -1169,6 +1169,7 @@ enum {
   SST_NAME,
   NUM_ROWS,
   DATA_SIZE,
+  FILE_SIZE,
   ENTRY_DELETES,
   ENTRY_SINGLEDELETES,
   ENTRY_MERGES,
@@ -1190,6 +1191,7 @@ static ST_FIELD_INFO rdb_i_s_index_file_map_fields_info[] = {
     ROCKSDB_FIELD_INFO("SST_NAME", NAME_LEN + 1, MYSQL_TYPE_STRING, 0),
     ROCKSDB_FIELD_INFO("NUM_ROWS", sizeof(int64_t), MYSQL_TYPE_LONGLONG, 0),
     ROCKSDB_FIELD_INFO("DATA_SIZE", sizeof(int64_t), MYSQL_TYPE_LONGLONG, 0),
+    ROCKSDB_FIELD_INFO("FILE_SIZE", sizeof(int64_t), MYSQL_TYPE_LONGLONG, 0),
     ROCKSDB_FIELD_INFO("ENTRY_DELETES", sizeof(int64_t), MYSQL_TYPE_LONGLONG,
                        0),
     ROCKSDB_FIELD_INFO("ENTRY_SINGLEDELETES", sizeof(int64_t),
@@ -1265,6 +1267,8 @@ static int rdb_i_s_index_file_map_fill_table(
               it.m_gl_index_id.index_id, true);
           field[RDB_INDEX_FILE_MAP_FIELD::NUM_ROWS]->store(it.m_rows, true);
           field[RDB_INDEX_FILE_MAP_FIELD::DATA_SIZE]->store(it.m_data_size,
+                                                            true);
+          field[RDB_INDEX_FILE_MAP_FIELD::FILE_SIZE]->store(it.m_actual_disk_size,
                                                             true);
           field[RDB_INDEX_FILE_MAP_FIELD::ENTRY_DELETES]->store(
               it.m_entry_deletes, true);
