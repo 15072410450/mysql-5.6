@@ -62,8 +62,7 @@ public:
     DBUG_ASSERT(gl_index_id.index_id >= 1);
 
     if (gl_index_id != m_prev_index) {
-      m_should_delete =
-          rdb_get_dict_manager()->is_drop_index_ongoing(gl_index_id);
+      m_should_delete = is_drop_index_ongoing(gl_index_id);
 
       if (!m_should_delete) {
         get_ttl_duration_and_offset(gl_index_id, &m_ttl_duration,
