@@ -23,6 +23,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/rocksdb
   ${CMAKE_SOURCE_DIR}/rocksdb/include
   ${CMAKE_SOURCE_DIR}/rocksdb/third-party/gtest-1.7.0/fused-src
+  ${CMAKE_SOURCE_DIR}/../terark-zip-rocksdb/src
 )
 
 # This is a strong requirement coming from RocksDB. No conditional checks here.
@@ -120,6 +121,34 @@ IF (WITH_TBB)
   SET(rocksdb_static_libs ${rocksdb_static_libs}
     ${TBB_LIBRARY})
   ADD_DEFINITIONS(-DTBB)
+ENDIF()
+
+IF ("${WITH_TERARKDB}" STREQUAL "")
+  IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
+    SET(WITH_TERARKDB $ENV{WITH_TERARKDB})
+  ENDIF()
+ENDIF()
+
+IF ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+  SET(TERARK_LIB_SUFFIX "d")
+ELSE()
+  SET(TERARK_LIB_SUFFIX "r")
+ENDIF()
+
+IF ("${WITH_TERARKDB}" STREQUAL "")
+	message(FATAL_ERROR  "var WITH_TERARKDB must be defined")
+ELSE()
+  SET(rocksdb_static_libs ${rocksdb_static_libs}
+  -Wl,--whole-archive
+  ${WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-zbs-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-fsa-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-core-${TERARK_LIB_SUFFIX}.a
+  -Wl,--no-whole-archive
+  -lcrypto
+  ${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
+  -ldl
+  -lgomp -lz)
 ENDIF()
 
 CHECK_INCLUDE_FILES(zlib.h HAVE_ZLIB_H)

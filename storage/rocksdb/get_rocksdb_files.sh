@@ -2,9 +2,14 @@
 MKFILE=`mktemp`
 # create and run a simple makefile
 # include rocksdb make file relative to the path of this script
-echo "include rocksdb/src.mk
+echo "#include rocksdb/src.mk ##DO NOT include##
 all:
 	@echo \$(LIB_SOURCES)" > $MKFILE
+
+#brain dead myrocks requires false used clock_cache
+#sed '/clock_cache.cc/d' rocksdb/src.mk >> $MKFILE
+cat rocksdb/src.mk >> $MKFILE
+
 for f in `make --makefile $MKFILE`
 do
   echo ../../rocksdb/$f
@@ -16,7 +21,7 @@ rm $MKFILE
 bv=rocksdb/util/build_version.cc
 date=$(date +%F)
 git_sha=$(pushd rocksdb >/dev/null && git rev-parse  HEAD 2>/dev/null && popd >/dev/null)
-if [ ! -f $bv ] || [ -z $git_sha ] || [ ! `grep $git_sha $bv` ]
+if [ ! -f "$bv" ] || [ -z "$git_sha" ] || [ ! "`grep $git_sha $bv`" ]
 then
 echo "#include \"build_version.h\"
 const char* rocksdb_build_git_sha =
