@@ -160,10 +160,10 @@ SET @my_var='new_value';
 SELECT GET_LOCK('my_lock', 3600);
 select * from information_schema.srv_sessions where id=rpc_id;
 ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO	CONN_ID
-rpc_id	root	localhost	db_default	Query attributes	0	User lock	SELECT GET_LOCK('my_lock', 3600)	1
+rpc_id	root	localhost	db_default	Query attributes	0	User lock	SELECT GET_LOCK('my_lock', TIMEOUT)	1
 select * from information_schema.processlist where SRV_ID=rpc_id;
 ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO	SRV_ID
-1	root	localhost	db_default	Query attributes	0	User lock	SELECT GET_LOCK('my_lock', 3600)	rpc_id
+1	root	localhost	db_default	Query attributes	0	User lock	SELECT GET_LOCK('my_lock', TIMEOUT)	rpc_id
 KILL QUERY rpc_id;
 select * from information_schema.srv_sessions where id=rpc_id;
 ID	USER	HOST	DB	COMMAND	TIME	STATE	INFO	CONN_ID
@@ -359,6 +359,86 @@ REPEAT('X', 4000000), REPEAT('X', 4000000), REPEAT('X', 4000000),
 REPEAT('X', 4000000), REPEAT('X', 4000000);
 USER()	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)	REPEAT('X', 4000000)
 scriptro@localhost	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>	<4Mb of 'X's>
+
+# Case 14: Make sure character set is being handled
+
+
+the character set (client/connection/results) for con1 should be cp1251
+
+SHOW VARIABLES LIKE 'character\_set\_%';
+Variable_name	Value
+character_set_client	cp1251
+character_set_connection	cp1251
+character_set_database	latin1
+character_set_filesystem	binary
+character_set_results	cp1251
+character_set_server	latin1
+character_set_system	utf8
+SET @my_var='new_value';
+
+the character set for a detached session should be cp1251
+
+SHOW VARIABLES LIKE 'character\_set\_%';
+Variable_name	Value
+character_set_client	cp1251
+character_set_connection	cp1251
+character_set_database	latin1
+character_set_filesystem	binary
+character_set_results	cp1251
+character_set_server	latin1
+character_set_system	utf8
+
+The charset for this new connection should be switched back to latin1
+
+SHOW VARIABLES LIKE 'character\_set\_%';
+Variable_name	Value
+character_set_client	latin1
+character_set_connection	latin1
+character_set_database	latin1
+character_set_filesystem	binary
+character_set_results	latin1
+character_set_server	latin1
+character_set_system	utf8
+
+reusing the rpc_id created above should still have the old charset info
+
+SHOW VARIABLES LIKE 'character\_set\_%';
+Variable_name	Value
+character_set_client	cp1251
+character_set_connection	cp1251
+character_set_database	latin1
+character_set_filesystem	binary
+character_set_results	cp1251
+character_set_server	latin1
+character_set_system	utf8
+set @my_var='new_value';
+
+A newly created rpc_id with latin1 charset should show latin1
+
+SHOW VARIABLES LIKE 'character\_set\_%';
+Variable_name	Value
+character_set_client	latin1
+character_set_connection	latin1
+character_set_database	latin1
+character_set_filesystem	binary
+character_set_results	latin1
+character_set_server	latin1
+character_set_system	utf8
+
+Make sure changing the charset midflight on a detached session works
+
+SET NAMES 'cp1251';
+SHOW VARIABLES LIKE 'character\_set\_%';
+Variable_name	Value
+character_set_client	cp1251
+character_set_connection	cp1251
+character_set_database	latin1
+character_set_filesystem	binary
+character_set_results	cp1251
+character_set_server	latin1
+character_set_system	utf8
+KILL rpc_id;
+KILL rpc_id;
 drop database db_default;
 drop database db_rpc;
 drop user scriptro;

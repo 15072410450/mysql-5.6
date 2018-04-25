@@ -2608,6 +2608,12 @@ static Sys_var_mybool Sys_optimizer_force_index_for_range(
       SESSION_VAR(optimizer_force_index_for_range),
       CMD_LINE(OPT_ARG), DEFAULT(FALSE));
 
+static Sys_var_mybool Sys_optimizer_full_scan(
+      "optimizer_full_scan",
+      "Enable full table and index scans.",
+      SESSION_VAR(optimizer_full_scan),
+      CMD_LINE(OPT_ARG), DEFAULT(TRUE));
+
 static const char *optimizer_switch_names[]=
 {
   "index_merge", "index_merge_union", "index_merge_sort_union",
@@ -2619,6 +2625,7 @@ static const char *optimizer_switch_names[]=
   "subquery_materialization_cost_based",
 #endif
   "use_index_extensions", "skip_scan", "skip_scan_cost_based",
+  "multi_range_groupby",
   "default", NullS
 };
 /** propagates changes to @@engine_condition_pushdown */
@@ -2642,7 +2649,7 @@ static Sys_var_flagset Sys_optimizer_switch(
        " subquery_materialization_cost_based"
 #endif
        ", block_nested_loop, batched_key_access, use_index_extensions"
-       ", skip_scan, skip_scan_cost_based"
+       ", skip_scan, skip_scan_cost_based, multi_range_groupby"
        "} and val is one of {on, off, default}",
        SESSION_VAR(optimizer_switch), CMD_LINE(REQUIRED_ARG),
        optimizer_switch_names, DEFAULT(OPTIMIZER_SWITCH_DEFAULT),

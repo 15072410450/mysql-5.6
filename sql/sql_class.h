@@ -639,6 +639,7 @@ typedef struct system_variables
   ulong     optimizer_trace_max_mem_size;
   my_bool   optimizer_low_limit_heuristic;
   my_bool   optimizer_force_index_for_range;
+  my_bool   optimizer_full_scan;
   sql_mode_t sql_mode; ///< which non-standard SQL behaviour should be enabled
   ulonglong option_bits; ///< OPTION_xxx constants, e.g. OPTION_PROFILING
   ha_rows select_limit;
@@ -4851,6 +4852,12 @@ public:
   std::shared_ptr<utils::PerfCounter> query_perf;
   std::string trace_id;
   uint64_t pc_val;
+
+  void copy_client_charset_settings(const THD* other) {
+    variables.character_set_client= other->variables.character_set_client;
+    variables.collation_connection= other->variables.collation_connection;
+    variables.character_set_results= other->variables.character_set_results;
+  }
 };
 
 /*

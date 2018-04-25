@@ -9169,8 +9169,7 @@ int ha_rocksdb::check_and_lock_sk(const uint &key_id,
       rocksdb::Slice((const char *)m_sk_packed_tuple, size);
 
   /*
-    For UPDATEs, if the key has changed, we need to obtain a lock. INSERTs
-    always require locking.
+     Acquire lock on the old key in case of UPDATE
   */
   if (row_info.old_data != nullptr) {
     size = kd.pack_record(table, m_pack_buffer, row_info.old_data,
@@ -9179,12 +9178,16 @@ int ha_rocksdb::check_and_lock_sk(const uint &key_id,
     const rocksdb::Slice old_slice =
         rocksdb::Slice((const char *)m_sk_packed_tuple_old, size);
 
-    /*
-      For updates, if the keys are the same, then no lock is needed
+    const rocksdb::Status s =
+        get_for_update(row_info.tx, kd.get_cf(), old_slice, nullptr);
+    if (!s.ok()) {
+      return row_info.tx->set_status_error(table->in_use, s, kd, m_tbl_def,
+                                           m_table_handler);
+    }
 
-      Also check to see if the key has any fields set to NULL. If it does, then
-      this key is unique since NULL is not equal to each other, so no lock is
-      needed.
+    /*
+      If the old and new keys are the same we're done since we've already taken
+      the lock on the old key
     */
     if (!Rdb_pk_comparator::bytewise_compare(new_slice, old_slice)) {
       return HA_EXIT_SUCCESS;
@@ -12837,6 +12840,9 @@ void rdb_handle_io_error(const rocksdb::Status status,
     }
     case RDB_IO_ERROR_BG_THREAD: {
       rdb_log_status_error(status, "BG thread failed to write to RocksDB");
+      /* NO_LINT_DEBUG */
+      sql_print_error("MyRocks: aborting on BG write error.");
+      abort();
       break;
     }
     case RDB_IO_ERROR_GENERAL: {
