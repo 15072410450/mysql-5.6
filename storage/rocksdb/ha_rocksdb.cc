@@ -2860,8 +2860,12 @@ public:
 
   explicit Rdb_writebatch_impl(THD *const thd)
       : Rdb_transaction(thd), m_batch(nullptr) {
+    rocksdb::WriteBatchIndexType index_type = rocksdb::WriteBatchIndexType::kSkipList;
+    if (strcmp(rocksdb_bulk_load_index_type, "rbtree") == 0) {
+      index_type = rocksdb::WriteBatchIndexType::kRBTree;
+    }
     m_batch = new rocksdb::WriteBatchWithIndex(rocksdb::BytewiseComparator(), 0,
-                                               true, 0, rocksdb_bulk_load_index_type);
+                                               true, 0, index_type);
   }
 
   virtual ~Rdb_writebatch_impl() {
