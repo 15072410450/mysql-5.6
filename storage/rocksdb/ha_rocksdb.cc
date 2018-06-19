@@ -2366,6 +2366,10 @@ public:
   }
 };
 
+const rocksdb::WriteBatchEntryIndexFactory* get_write_batch_entry_index_factory() {
+  return rocksdb::GetWriteBatchEntryIndexFactory(rocksdb_bulk_load_index_type);
+}
+
 /*
   This is a rocksdb transaction. Its members represent the current transaction,
   which consists of:
@@ -2613,6 +2617,7 @@ public:
     tx_opts.deadlock_detect = THDVAR(m_thd, deadlock_detect);
     tx_opts.deadlock_detect_depth = THDVAR(m_thd, deadlock_detect_depth);
     tx_opts.max_write_batch_size = THDVAR(m_thd, write_batch_max_bytes);
+    tx_opts.index_type = get_write_batch_entry_index_factory();
 
     write_opts.sync = (rocksdb_flush_log_at_trx_commit == FLUSH_LOG_SYNC);
     write_opts.disableWAL = THDVAR(m_thd, write_disable_wal);
@@ -2860,12 +2865,9 @@ public:
 
   explicit Rdb_writebatch_impl(THD *const thd)
       : Rdb_transaction(thd), m_batch(nullptr) {
-    rocksdb::WriteBatchIndexType index_type = rocksdb::WriteBatchIndexType::kSkipList;
-    if (strcmp(rocksdb_bulk_load_index_type, "rbtree") == 0) {
-      index_type = rocksdb::WriteBatchIndexType::kRBTree;
-    }
+    auto index_factory = get_write_batch_entry_index_factory();
     m_batch = new rocksdb::WriteBatchWithIndex(rocksdb::BytewiseComparator(), 0,
-                                               true, 0, index_type);
+                                               true, 0, index_factory);
   }
 
   virtual ~Rdb_writebatch_impl() {
