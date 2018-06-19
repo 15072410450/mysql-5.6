@@ -1,0 +1,9 @@
+support-files/mysql.server
+support-files/mysql-log-rotate
+bin/mysql_config
+bin/msql2mysql
+bin/mysqlaccess
+bin/mysqld_safe
+bin/mysqld_multi
+docs/INFO_BIN
+include/my_config.h

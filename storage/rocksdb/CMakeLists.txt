@@ -23,6 +23,7 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/rocksdb
   ${CMAKE_SOURCE_DIR}/rocksdb/include
   ${CMAKE_SOURCE_DIR}/rocksdb/third-party/gtest-1.7.0/fused-src
+  ${CMAKE_SOURCE_DIR}/../terark-zip-rocksdb/src
 )
 
 # This is a strong requirement coming from RocksDB. No conditional checks here.
@@ -82,8 +83,12 @@ ENDIF()
 
 SET(rocksdb_static_libs )
 IF (WITH_SNAPPY)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_SNAPPY}/lib/libsnappy${PIC_EXT}.a)
+  IF (EXISTS ${WITH_SNAPPY}/lib64/libsnappy${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_SNAPPY}/lib64/libsnappy${PIC_EXT}.a)
+  ELSE()
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_SNAPPY}/lib/libsnappy${PIC_EXT}.a)
+  ENDIF()
   ADD_DEFINITIONS(-DSNAPPY)
 ENDIF()
 
@@ -94,21 +99,63 @@ IF (WITH_LZ4)
 ENDIF()
 
 IF (WITH_BZ2)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_BZ2}/lib/libbz2${PIC_EXT}.a)
+  IF(EXISTS ${WITH_BZ2}/lib64/libbz2${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_BZ2}/lib64/libbz2${PIC_EXT}.a)
+  ELSE()
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_BZ2}/lib/libbz2${PIC_EXT}.a)
+  ENDIF()
   ADD_DEFINITIONS(-DBZIP2)
 ENDIF()
 
 IF (WITH_ZSTD)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_ZSTD}/lib/libzstd${PIC_EXT}.a)
+  IF(EXISTS ${WITH_ZSTD}/lib64/libzstd${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_ZSTD}/lib64/libzstd${PIC_EXT}.a)
+  ELSE()
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_ZSTD}/lib/libzstd${PIC_EXT}.a)
+  ENDIF()
   ADD_DEFINITIONS(-DZSTD)
 ENDIF()
 
 IF (WITH_TBB)
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  ${WITH_TBB}/lib/libtbb${PIC_EXT}.a)
+  IF(EXISTS ${WITH_TBB}/lib64/libtbb${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs} ${WITH_TBB}/lib64/libtbb${PIC_EXT}.a)
+  ELSEIF(EXISTS ${WITH_TBB}/lib/libtbb${PIC_EXT}.a)
+    SET(rocksdb_static_libs ${rocksdb_static_libs}
+    ${WITH_TBB}/lib/libtbb${PIC_EXT}.a)
+  ELSE()
+	message(FATAL_ERROR  "var WITH_TBB/lib*/libtbb*.a must exists")
+  ENDIF()
   ADD_DEFINITIONS(-DTBB)
+ENDIF()
+
+IF ("${WITH_TERARKDB}" STREQUAL "")
+  IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
+    SET(WITH_TERARKDB $ENV{WITH_TERARKDB})
+  ENDIF()
+ENDIF()
+
+IF ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+  SET(TERARK_LIB_SUFFIX "d")
+ELSE()
+  SET(TERARK_LIB_SUFFIX "r")
+ENDIF()
+
+IF ("${WITH_TERARKDB}" STREQUAL "")
+	message(FATAL_ERROR  "var WITH_TERARKDB must be defined")
+ELSE()
+  SET(rocksdb_static_libs ${rocksdb_static_libs}
+  -Wl,--whole-archive
+  ${WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-zbs-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-fsa-${TERARK_LIB_SUFFIX}.a
+  ${WITH_TERARKDB}/lib_static/libterark-core-${TERARK_LIB_SUFFIX}.a
+  -Wl,--no-whole-archive
+  -lcrypto
+  ${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
+  -ldl
+  -lgomp -lz)
 ENDIF()
 
 CHECK_INCLUDE_FILES(zlib.h HAVE_ZLIB_H)

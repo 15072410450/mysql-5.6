@@ -47,10 +47,6 @@
 
 namespace myrocks {
 
-void get_mem_comparable_space(const CHARSET_INFO *cs,
-                              const std::vector<uchar> **xfrm, size_t *xfrm_len,
-                              size_t *mb_len);
-
 /*
   Rdb_key_def class implementation
 */
@@ -3505,6 +3501,8 @@ GL_INDEX_ID Rdb_tbl_def::get_autoincr_gl_index_id() {
   return GL_INDEX_ID();
 }
 
+Rdb_tables_scanner::~Rdb_tables_scanner() {}
+
 /*
   Static function of type my_hash_get_key that gets invoked by
   the m_ddl_hash object of type my_core::HASH.
@@ -4885,6 +4883,26 @@ bool Rdb_dict_manager::is_index_operation_ongoing(
     found = true;
   }
   return found;
+}
+
+/*
+  Get all dropped index_id by cf_id
+ */
+void Rdb_dict_manager::get_all_dropped_index_ongoing(
+    uint32_t cf_id, void *user_data, void(*add_index_id)(void *, uint32_t)) const {
+  std::unique_ptr<rocksdb::Iterator> it(new_iterator());
+
+  uchar key_buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2] = {0};
+  rdb_netbuf_store_uint32(key_buf, Rdb_key_def::DDL_DROP_INDEX_ONGOING);
+  rdb_netbuf_store_uint32(key_buf + Rdb_key_def::INDEX_NUMBER_SIZE, cf_id);
+  const rocksdb::Slice key_prefix = rocksdb::Slice((char *)key_buf, sizeof(key_buf));
+
+  for (it->Seek(key_prefix); it->Valid() && it->key().starts_with(key_prefix); it->Next()){
+    const rocksdb::Slice key = it->key();
+    DBUG_ASSERT(key.size() == Rdb_key_def::INDEX_NUMBER_SIZE * 3);
+    uint32_t index_id = rdb_netbuf_to_uint32((const uchar *)key.data() + Rdb_key_def::INDEX_NUMBER_SIZE * 2);
+    add_index_id(user_data, index_id);
+  }
 }
 
 /*

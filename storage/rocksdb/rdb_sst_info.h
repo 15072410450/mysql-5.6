@@ -80,7 +80,7 @@ class Rdb_sst_file_ordered {
 
    public:
     explicit Rdb_sst_stack(size_t max_size)
-        : m_buffer(nullptr), m_buffer_size(max_size) {}
+        : m_buffer(nullptr), m_buffer_size(max_size), m_offset(0) {}
     ~Rdb_sst_stack() { delete[] m_buffer; }
 
     void reset() { m_offset = 0; }
