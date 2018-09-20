@@ -11,11 +11,17 @@ ENDIF()
 
 # get a list of rocksdb library source files
 # run with env -i to avoid passing variables
+IF(MSVC)
+  # in MSVC with mingw, env -i causing bash can not find 'make'
+ELSE()
+  SET(ENV_CMD_OPTIONS "-i")
+ENDIF()
 EXECUTE_PROCESS(
-  COMMAND env -i ${CMAKE_SOURCE_DIR}/storage/rocksdb/get_rocksdb_files.sh
+  COMMAND env ${ENV_CMD_OPTIONS} ${CMAKE_SOURCE_DIR}/storage/rocksdb/get_rocksdb_files.sh
   OUTPUT_VARIABLE SCRIPT_OUTPUT
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
+
 # split the list into lines
 STRING(REGEX MATCHALL "[^\n]+" ROCKSDB_LIB_SOURCES ${SCRIPT_OUTPUT})
 
@@ -130,32 +136,36 @@ IF (WITH_TBB)
   ADD_DEFINITIONS(-DTBB)
 ENDIF()
 
-IF ("${WITH_TERARKDB}" STREQUAL "")
-  IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
-    SET(WITH_TERARKDB $ENV{WITH_TERARKDB})
-  ENDIF()
-ENDIF()
-
-IF ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-  SET(TERARK_LIB_SUFFIX "d")
+IF (MSVC)
+	message(STATUS "ignore TerarkDB in windows")
 ELSE()
-  SET(TERARK_LIB_SUFFIX "r")
-ENDIF()
+	IF ("${WITH_TERARKDB}" STREQUAL "")
+		IF (NOT "$ENV{WITH_TERARKDB}" STREQUAL "")
+			SET(WITH_TERARKDB $ENV{WITH_TERARKDB})
+		ENDIF()
+	ENDIF()
 
-IF ("${WITH_TERARKDB}" STREQUAL "")
-	message(FATAL_ERROR  "var WITH_TERARKDB must be defined")
-ELSE()
-  SET(rocksdb_static_libs ${rocksdb_static_libs}
-  -Wl,--whole-archive
-  ${WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-${TERARK_LIB_SUFFIX}.a
-  ${WITH_TERARKDB}/lib_static/libterark-zbs-${TERARK_LIB_SUFFIX}.a
-  ${WITH_TERARKDB}/lib_static/libterark-fsa-${TERARK_LIB_SUFFIX}.a
-  ${WITH_TERARKDB}/lib_static/libterark-core-${TERARK_LIB_SUFFIX}.a
-  -Wl,--no-whole-archive
-  -lcrypto
-  ${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
-  -ldl
-  -lgomp -lz)
+	IF ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+		SET(TERARK_LIB_SUFFIX "d")
+	ELSE()
+		SET(TERARK_LIB_SUFFIX "r")
+	ENDIF()
+
+	IF ("${WITH_TERARKDB}" STREQUAL "")
+		message(FATAL_ERROR  "var WITH_TERARKDB must be defined")
+	ELSE()
+		SET(rocksdb_static_libs ${rocksdb_static_libs}
+		-Wl,--whole-archive
+		${WITH_TERARKDB}/lib_static/libterark-zip-rocksdb-${TERARK_LIB_SUFFIX}.a
+		${WITH_TERARKDB}/lib_static/libterark-zbs-${TERARK_LIB_SUFFIX}.a
+		${WITH_TERARKDB}/lib_static/libterark-fsa-${TERARK_LIB_SUFFIX}.a
+		${WITH_TERARKDB}/lib_static/libterark-core-${TERARK_LIB_SUFFIX}.a
+		-Wl,--no-whole-archive
+		-lcrypto
+		${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
+		-ldl
+		-lgomp -lz)
+	ENDIF()
 ENDIF()
 
 CHECK_INCLUDE_FILES(zlib.h HAVE_ZLIB_H)
