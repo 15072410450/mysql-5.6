@@ -5464,7 +5464,6 @@ int ha_rocksdb::convert_blob_from_storage_format(
   if (decode) {
     // set 8-byte pointer to 0, like innodb does (relevant for 32-bit
     // platforms)
-    memset(blob->ptr + length_bytes, 0, 8);
     memcpy(blob->ptr + length_bytes, &blob_ptr, sizeof(uchar **));
   }
 
@@ -5630,30 +5629,25 @@ int ha_rocksdb::convert_record_from_storage_format(
       }
     }
 
-    uint field_offset = field->ptr - table->record[0];
-    uint null_offset = field->null_offset();
-    bool maybe_null = field->real_maybe_null();
-    field->move_field(buf + field_offset,
-                      maybe_null ? buf + null_offset : nullptr,
-                      field->null_bit);
-    // WARNING! - Don't return before restoring field->ptr and field->null_ptr!
+    uint const field_offset = field->ptr - table->record[0];
+    uchar* const fieldptr = buf + field_offset;
 
     if (isNull) {
       if (decode) {
-        /* This sets the NULL-bit of this record */
-        field->set_null();
+        if (field->real_maybe_null()) // set null
+          buf[field->null_offset()] |= field->null_bit;
         /*
           Besides that, set the field value to default value. CHECKSUM TABLE
           depends on this.
         */
-        memcpy(field->ptr, table->s->default_values + field_offset,
+        memcpy(fieldptr, table->s->default_values + field_offset,
                field->pack_length());
       }
     } else {
       if (decode) {
-        field->set_notnull();
+        if (field->real_maybe_null()) // set not null
+          buf[field->null_offset()] &= (uchar)~field->null_bit;
       }
-      int err = HA_EXIT_SUCCESS;
       if (field_dec->m_field_type == MYSQL_TYPE_BLOB) {
         const auto blob = (my_core::Field_blob *)field;
         const uint length_bytes = blob->pack_length() - portable_sizeof_char_ptr;
@@ -5661,8 +5655,8 @@ int ha_rocksdb::convert_record_from_storage_format(
         if (val_rem < length_bytes) {
           return HA_ERR_ROCKSDB_CORRUPT_DATA;
         }
-        memcpy(blob->ptr, val_pos, length_bytes);
-        const uint32 data_len = blob->get_length(
+        memcpy(fieldptr, val_pos, length_bytes);
+        const uint32 data_len = my_core::Field_blob::get_length(
             reinterpret_cast<const uchar*>(val_pos), length_bytes,
             table->s->db_low_byte_first);
         val_pos += length_bytes;
@@ -5672,8 +5666,7 @@ int ha_rocksdb::convert_record_from_storage_format(
         if (decode) {
           // set 8-byte pointer to 0, like innodb does (relevant for 32-bit
           // platforms)
-          memset(blob->ptr + length_bytes, 0, 8);
-          memcpy(blob->ptr + length_bytes, &val_pos, sizeof(uchar **));
+          memcpy(fieldptr + length_bytes, &val_pos, sizeof(uchar **));
         }
         val_pos += data_len;
       } else if (field_dec->m_field_type == MYSQL_TYPE_VARCHAR) {
@@ -5696,7 +5689,7 @@ int ha_rocksdb::convert_record_from_storage_format(
           return HA_ERR_ROCKSDB_CORRUPT_DATA;
         }
         if (decode) {
-          memcpy(field_var->ptr, val_pos, all_len);
+          memcpy(fieldptr, val_pos, all_len);
         }
         val_pos += all_len;
       } else {
@@ -5707,15 +5700,11 @@ int ha_rocksdb::convert_record_from_storage_format(
             return HA_ERR_ROCKSDB_CORRUPT_DATA;
           }
           if (decode) {
-            memcpy(field->ptr, val_pos, len);
+            memcpy(fieldptr, val_pos, len);
           }
           val_pos += len;
         }
       }
-      // Restore field->ptr and field->null_ptr
-      field->move_field(table->record[0] + field_offset,
-                        maybe_null ? table->record[0] + null_offset : nullptr,
-                        field->null_bit);
     }
   }
 
