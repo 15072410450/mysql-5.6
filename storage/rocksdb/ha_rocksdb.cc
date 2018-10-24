@@ -5551,10 +5551,9 @@ int ha_rocksdb::convert_field_from_storage_format(
 int ha_rocksdb::convert_record_from_storage_format(
     const rocksdb::Slice *const key, const rocksdb::Slice *const value,
     uchar *const buf) {
-  DBUG_ASSERT(key != nullptr);
-  DBUG_ASSERT(buf != nullptr);
-
-  Rdb_string_reader reader(value);
+  const char* val_pos = value->data();
+  const char* val_end = value->data() + value->size();
+  #define     val_rem  size_t(val_end - val_pos)
 
   /*
     Decode PK fields from the key
@@ -5562,17 +5561,11 @@ int ha_rocksdb::convert_record_from_storage_format(
   DBUG_EXECUTE_IF("myrocks_simulate_bad_pk_read1",
                   dbug_modify_key_varchar8(m_last_rowkey););
 
-  const rocksdb::Slice rowkey_slice(m_last_rowkey.ptr(),
-                                    m_last_rowkey.length());
-  const char *unpack_info = nullptr;
-  uint16 unpack_info_len = 0;
-  rocksdb::Slice unpack_slice;
-
   /* If it's a TTL record, skip the 8 byte TTL value */
-  const char *ttl_bytes;
   if (m_pk_descr->has_ttl()) {
-    if ((ttl_bytes = reader.read(ROCKSDB_SIZEOF_TTL_RECORD))) {
-      memcpy(m_ttl_bytes, ttl_bytes, ROCKSDB_SIZEOF_TTL_RECORD);
+    if (ROCKSDB_SIZEOF_TTL_RECORD <= val_rem) {
+      memcpy(m_ttl_bytes, val_pos, ROCKSDB_SIZEOF_TTL_RECORD);
+      val_pos += ROCKSDB_SIZEOF_TTL_RECORD;
     } else {
       return HA_ERR_ROCKSDB_CORRUPT_DATA;
     }
@@ -5580,34 +5573,43 @@ int ha_rocksdb::convert_record_from_storage_format(
 
   /* Other fields are decoded from the value */
   const char *null_bytes = nullptr;
-  if (m_null_bytes_in_rec && !(null_bytes = reader.read(m_null_bytes_in_rec))) {
-    return HA_ERR_ROCKSDB_CORRUPT_DATA;
+  if (m_null_bytes_in_rec) {
+    if (m_null_bytes_in_rec <= val_rem)
+      null_bytes = val_pos, val_pos += m_null_bytes_in_rec;
+    else
+      return HA_ERR_ROCKSDB_CORRUPT_DATA;
   }
 
   if (m_maybe_unpack_info) {
-    unpack_info = reader.get_current_ptr();
-    if (!unpack_info || !Rdb_key_def::is_unpack_data_tag(unpack_info[0]) ||
-        !reader.read(Rdb_key_def::get_unpack_header_size(unpack_info[0]))) {
+    if (val_rem == 0 || !Rdb_key_def::is_unpack_data_tag(val_pos[0])) {
       return HA_ERR_ROCKSDB_CORRUPT_DATA;
     }
-
-    unpack_info_len =
-        rdb_netbuf_to_uint16(reinterpret_cast<const uchar *>(unpack_info + 1));
-    unpack_slice = rocksdb::Slice(unpack_info, unpack_info_len);
-
-    reader.read(unpack_info_len -
-                Rdb_key_def::get_unpack_header_size(unpack_info[0]));
-  }
-
-  int err = HA_EXIT_SUCCESS;
-  if (m_key_requested) {
-    err = m_pk_descr->unpack_record(table, buf, &rowkey_slice,
-                                    unpack_info ? &unpack_slice : nullptr,
-                                    false /* verify_checksum */);
-  }
-
-  if (err != HA_EXIT_SUCCESS) {
-    return err;
+    size_t unpack_header_size= Rdb_key_def::get_unpack_header_size(val_pos[0]);
+    if (val_rem < unpack_header_size) {
+      return HA_ERR_ROCKSDB_CORRUPT_DATA;
+    }
+    uint16 unpack_info_len =
+        rdb_netbuf_to_uint16(reinterpret_cast<const uchar*>(val_pos + 1));
+    if (m_key_requested) {
+      rocksdb::Slice unpack_slice(val_pos, unpack_info_len);
+      rocksdb::Slice rowkey_slice(m_last_rowkey.ptr(), m_last_rowkey.length());
+      int err = m_pk_descr->unpack_record(table, buf, &rowkey_slice,
+                                          &unpack_slice,
+                                          false /* verify_checksum */);
+      if (err != HA_EXIT_SUCCESS) {
+        return err;
+      }
+    }
+    val_pos += unpack_info_len; // including unpack_header_size
+  } else {
+    if (m_key_requested) {
+      rocksdb::Slice rowkey_slice(m_last_rowkey.ptr(), m_last_rowkey.length());
+      int err = m_pk_descr->unpack_record(table, buf, &rowkey_slice, nullptr,
+                                          false /* verify_checksum */);
+      if (err != HA_EXIT_SUCCESS) {
+        return err;
+      }
+    }
   }
 
   for (auto it = m_decoders_vect.begin(); it != m_decoders_vect.end(); it++) {
@@ -5620,8 +5622,12 @@ int ha_rocksdb::convert_record_from_storage_format(
     Field *const field = table->field[field_dec->m_field_index];
 
     /* Skip the bytes we need to skip */
-    if (it->m_skip && !reader.read(it->m_skip)) {
-      return HA_ERR_ROCKSDB_CORRUPT_DATA;
+    if (size_t skip = it->m_skip) {
+      if (skip <= val_rem) {
+        val_pos += skip;
+      } else {
+        return HA_ERR_ROCKSDB_CORRUPT_DATA;
+      }
     }
 
     uint field_offset = field->ptr - table->record[0];
@@ -5647,36 +5653,80 @@ int ha_rocksdb::convert_record_from_storage_format(
       if (decode) {
         field->set_notnull();
       }
-
+      int err = HA_EXIT_SUCCESS;
       if (field_dec->m_field_type == MYSQL_TYPE_BLOB) {
-        err = convert_blob_from_storage_format(
-            (my_core::Field_blob *) field, &reader, decode);
+        const auto blob = (my_core::Field_blob *)field;
+        const uint length_bytes = blob->pack_length() - portable_sizeof_char_ptr;
+
+        if (val_rem < length_bytes) {
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
+        memcpy(blob->ptr, val_pos, length_bytes);
+        const uint32 data_len = blob->get_length(
+            reinterpret_cast<const uchar*>(val_pos), length_bytes,
+            table->s->db_low_byte_first);
+        val_pos += length_bytes;
+        if (val_rem < data_len) {
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
+        if (decode) {
+          // set 8-byte pointer to 0, like innodb does (relevant for 32-bit
+          // platforms)
+          memset(blob->ptr + length_bytes, 0, 8);
+          memcpy(blob->ptr + length_bytes, &val_pos, sizeof(uchar **));
+        }
+        val_pos += data_len;
       } else if (field_dec->m_field_type == MYSQL_TYPE_VARCHAR) {
-        err = convert_varchar_from_storage_format(
-            (my_core::Field_varstring *) field, &reader, decode);
+        // convert_varchar_from_storage_format
+        const auto field_var = (my_core::Field_varstring *)field;
+        const size_t length_bytes = field_var->length_bytes;
+        if (val_rem < length_bytes)
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+
+        size_t data_len;
+        /* field_var->length_bytes is 1 or 2 */
+        if (length_bytes == 1) {
+          data_len = (uchar)val_pos[0];
+        } else {
+          DBUG_ASSERT(length_bytes == 2);
+          data_len = uint2korr(val_pos);
+        }
+        size_t all_len = length_bytes + data_len;
+        if (val_rem < all_len) {
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
+        if (decode) {
+          memcpy(field_var->ptr, val_pos, all_len);
+        }
+        val_pos += all_len;
       } else {
-        err = convert_field_from_storage_format(
-            field, &reader, decode, field_dec->m_pack_length_in_rec);
+        // convert_field_from_storage_format()
+        size_t len = field_dec->m_pack_length_in_rec;
+        if (len > 0) {
+          if (val_rem < len) {
+            return HA_ERR_ROCKSDB_CORRUPT_DATA;
+          }
+          if (decode) {
+            memcpy(field->ptr, val_pos, len);
+          }
+          val_pos += len;
+        }
       }
-    }
-
-    // Restore field->ptr and field->null_ptr
-    field->move_field(table->record[0] + field_offset,
-                      maybe_null ? table->record[0] + null_offset : nullptr,
-                      field->null_bit);
-
-    if (err != HA_EXIT_SUCCESS) {
-      return err;
+      // Restore field->ptr and field->null_ptr
+      field->move_field(table->record[0] + field_offset,
+                        maybe_null ? table->record[0] + null_offset : nullptr,
+                        field->null_bit);
     }
   }
 
   if (m_verify_row_debug_checksums) {
-    if (reader.remaining_bytes() == RDB_CHECKSUM_CHUNK_SIZE &&
-        reader.read(1)[0] == RDB_CHECKSUM_DATA_TAG) {
+    if (val_rem == RDB_CHECKSUM_CHUNK_SIZE &&
+        val_pos++[0] == RDB_CHECKSUM_DATA_TAG) {
       uint32_t stored_key_chksum =
-          rdb_netbuf_to_uint32((const uchar *)reader.read(RDB_CHECKSUM_SIZE));
+          rdb_netbuf_to_uint32((const uchar *)val_pos);
       uint32_t stored_val_chksum =
-          rdb_netbuf_to_uint32((const uchar *)reader.read(RDB_CHECKSUM_SIZE));
+          rdb_netbuf_to_uint32((const uchar *)val_pos + RDB_CHECKSUM_SIZE);
+      val_pos += 2 * RDB_CHECKSUM_SIZE;
 
       const uint32_t computed_key_chksum =
           my_core::crc32(0, rdb_slice_to_uchar_ptr(key), key->size());
@@ -5702,7 +5752,7 @@ int ha_rocksdb::convert_record_from_storage_format(
 
       m_row_checksums_checked++;
     }
-    if (reader.remaining_bytes())
+    if (val_rem)
       return HA_ERR_ROCKSDB_CORRUPT_DATA;
   }
 
