@@ -1079,6 +1079,7 @@ public:
 };
 
 interface Rdb_tables_scanner {
+  virtual ~Rdb_tables_scanner();
   virtual int add_table(Rdb_tbl_def * tdef) = 0;
 };
 

@@ -424,7 +424,7 @@ public:
   Rdb_bit_reader &operator=(const Rdb_bit_reader &) = delete;
 
   explicit Rdb_bit_reader(Rdb_string_reader *const reader)
-      : m_cur(nullptr), m_offset(0), m_reader(reader) {}
+      : m_cur(nullptr), m_offset(0), m_ret(0), m_reader(reader) {}
 
   // Returns a pointer to an uint containing the bits read. On subsequent
   // reads, the value being pointed to will be overwritten.  Returns nullptr

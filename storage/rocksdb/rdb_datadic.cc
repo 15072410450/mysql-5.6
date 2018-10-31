@@ -47,10 +47,6 @@
 
 namespace myrocks {
 
-void get_mem_comparable_space(const CHARSET_INFO *cs,
-                              const std::vector<uchar> **xfrm, size_t *xfrm_len,
-                              size_t *mb_len);
-
 /*
   Rdb_key_def class implementation
 */
@@ -3513,6 +3509,8 @@ GL_INDEX_ID Rdb_tbl_def::get_autoincr_gl_index_id() {
   abort();
   return GL_INDEX_ID();
 }
+
+Rdb_tables_scanner::~Rdb_tables_scanner() {}
 
 /*
   Static function of type my_hash_get_key that gets invoked by

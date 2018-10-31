@@ -1,0 +1,65 @@
+# For advice on how to change settings please see
+# http://dev.mysql.com/doc/refman/5.6/en/server-configuration-defaults.html
+
+[mysqld]
+
+# Remove leading # and set to the amount of RAM for the most important data
+# cache in MySQL. Start at 70% of total RAM for dedicated server, else 10%.
+# innodb_buffer_pool_size = 128M
+
+# Remove leading # to turn on a very important data integrity option: logging
+# changes to the binary log between backups.
+# log_bin
+
+# These are commonly set, remove the # and set as required.
+# basedir = .....
+# datadir = .....
+# port = .....
+# server_id = .....
+socket =__MYSQL_INSTALL_DIR__/data/mysql.sock 
+
+# Remove leading # to set options mainly useful for reporting servers.
+# The server defaults are faster for transactions and fast SELECTs.
+# Adjust sizes as needed, experiment to find the optimal values.
+# join_buffer_size = 128M
+# sort_buffer_size = 2M
+# read_rnd_buffer_size = 2M 
+
+#sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES 
+
+rocksdb
+default-storage-engine=rocksdb
+#rocksdb_validate_tables=2
+skip-innodb
+default-tmp-storage-engine=MyISAM
+character-set-server=utf8
+collation-server=utf8_bin
+
+user = mysql
+bind-address = 0.0.0.0
+
+back_log = 600
+max_connections = 6000
+
+basedir = __MYSQL_INSTALL_DIR__
+log_error        = __MYSQL_INSTALL_DIR__/log/mysql_error.log
+# general_log_file = __MYSQL_INSTALL_DIR__/log/mysql.log
+# general_log      = 1
+
+datadir = __MYSQL_INSTALL_DIR__/data
+#log-bin = __MYSQL_INSTALL_DIR__/log/mysql-bin
+pid-file = __MYSQL_INSTALL_DIR__/data/mysql.pid
+
+character-sets-dir = __MYSQL_INSTALL_DIR__/share/charsets/
+language           = __MYSQL_INSTALL_DIR__/share/
+lc-messages_dir    = __MYSQL_INSTALL_DIR__/share/
+plugin-dir         = __MYSQL_INSTALL_DIR__/lib/plugin/
+
+
+#binlog-format=ROW
+secure_file_priv=""
+rocksdb_commit_in_the_middle=ON
+rocksdb_bulk_load_size=1000
+
+table_open_cache = 21397
+rocksdb_default_cf_options=memtable=rbtree
