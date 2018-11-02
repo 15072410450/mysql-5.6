@@ -492,7 +492,7 @@ static int rocksdb_check_bulk_load(THD *const thd,
                                    struct st_mysql_value *value);
 
 
-static int rocksdb_check_bulk_load_index_type(
+static int rocksdb_check_transaction_index_type(
     THD *const thd,
     struct st_mysql_sys_var *var
         MY_ATTRIBUTE((__unused__)),
@@ -583,7 +583,7 @@ static my_bool rocksdb_error_on_suboptimal_collation = 1;
 static uint32_t rocksdb_stats_recalc_rate = 0;
 static uint32_t rocksdb_debug_manual_compaction_delay = 0;
 static uint32_t rocksdb_max_manual_compactions = 0;
-static char *rocksdb_bulk_load_index_type;
+static char *rocksdb_transaction_index_type;
 
 std::atomic<uint64_t> rocksdb_row_lock_deadlocks(0);
 std::atomic<uint64_t> rocksdb_row_lock_wait_timeouts(0);
@@ -1703,11 +1703,11 @@ static MYSQL_SYSVAR_BOOL(error_on_suboptimal_collation,
                          nullptr, nullptr, TRUE);
 
 
-static MYSQL_SYSVAR_STR(bulk_load_index_type, rocksdb_bulk_load_index_type,
+static MYSQL_SYSVAR_STR(transaction_index_type, rocksdb_transaction_index_type,
                         PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_MEMALLOC,
-                        "RocksDB bulk load index type",
-                        rocksdb_check_bulk_load_index_type, nullptr,
-                        "rbtree");
+                        "RocksDB transaction index type",
+                        rocksdb_check_transaction_index_type, nullptr,
+                        "skiplist");
 
 static const int ROCKSDB_ASSUMED_KEY_VALUE_DISK_SIZE = 100;
 
@@ -1728,7 +1728,7 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(blind_delete_primary_key),
     MYSQL_SYSVAR(read_free_rpl_tables),
     MYSQL_SYSVAR(bulk_load_size),
-    MYSQL_SYSVAR(bulk_load_index_type),
+    MYSQL_SYSVAR(transaction_index_type),
     MYSQL_SYSVAR(merge_buf_size),
     MYSQL_SYSVAR(enable_bulk_load_api),
     MYSQL_SYSVAR(tmpdir),
@@ -2676,7 +2676,7 @@ public:
 };
 
 const rocksdb::WriteBatchEntryIndexFactory* get_write_batch_entry_index_factory() {
-  return rocksdb::GetWriteBatchEntryIndexFactory(rocksdb_bulk_load_index_type);
+  return rocksdb::GetWriteBatchEntryIndexFactory(rocksdb_transaction_index_type);
 }
 
 /*
@@ -13495,7 +13495,7 @@ int rocksdb_check_bulk_load_allow_unsorted(
   return 0;
 }
 
-int rocksdb_check_bulk_load_index_type(
+int rocksdb_check_transaction_index_type(
     THD *const thd,
     struct st_mysql_sys_var *var,
     void *save,
@@ -13507,9 +13507,9 @@ int rocksdb_check_bulk_load_index_type(
   if (!name || !strlen(name)) {
     return 1;
   }
-  if (strcmp(name, "rbtree") != 0 && strcmp(name, "skiplist") != 0) {
+  if (rocksdb::GetWriteBatchEntryIndexFactory(name) == nullptr) {
       my_error(ER_ERROR_WHEN_EXECUTING_COMMAND, MYF(0), "SET",
-               "bulk_load_index_type only support rbtree or skiplist");
+               "transaction_index_type does not support");
       return 1;
   }
   const char* new_name = my_strdup(name, MYF(0));

@@ -46,7 +46,7 @@ public:
     return a.compare(b);
   }
 
-  const char *Name() const override { return rocksdb::BytewiseComparator()->Name(); }
+  const char *Name() const override { return "RocksDB_SE_v3.10"; }
 
   // TODO: advanced funcs:
   // - FindShortestSeparator
