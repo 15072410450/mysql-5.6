@@ -508,6 +508,14 @@ static int rocksdb_check_bulk_load(THD *const thd,
                                    void *save,
                                    struct st_mysql_value *value);
 
+
+static int rocksdb_check_transaction_index_type(
+    THD *const thd,
+    struct st_mysql_sys_var *var
+        MY_ATTRIBUTE((__unused__)),
+    void *save,
+    struct st_mysql_value *value);
+
 static int rocksdb_check_bulk_load_allow_unsorted(
     THD *const thd, struct st_mysql_sys_var *var MY_ATTRIBUTE((__unused__)),
     void *save, struct st_mysql_value *value);
@@ -548,6 +556,7 @@ static char *rocksdb_wal_dir;
 static char *rocksdb_persistent_cache_path;
 static uint64_t rocksdb_index_type;
 static uint32_t rocksdb_flush_log_at_trx_commit;
+static uint32_t rocksdb_system_cf_background_flush_interval;
 static uint32_t rocksdb_debug_optimizer_n_rows;
 static my_bool rocksdb_force_compute_memtable_stats;
 static uint32_t rocksdb_force_compute_memtable_stats_cachetime;
@@ -573,6 +582,7 @@ static int rocksdb_debug_ttl_read_filter_ts = 0;
 static my_bool rocksdb_debug_ttl_ignore_pk = 0;
 static my_bool rocksdb_reset_stats = 0;
 static uint32_t rocksdb_io_write_timeout_secs = 0;
+static uint64_t rocksdb_number_stat_computes = 0;
 static uint32_t rocksdb_seconds_between_stat_computes = 3600;
 static long long rocksdb_compaction_sequential_deletes = 0l;
 static long long rocksdb_compaction_sequential_deletes_window = 0l;
@@ -590,6 +600,7 @@ static my_bool rocksdb_error_on_suboptimal_collation = 1;
 static uint32_t rocksdb_stats_recalc_rate = 0;
 static uint32_t rocksdb_debug_manual_compaction_delay = 0;
 static uint32_t rocksdb_max_manual_compactions = 0;
+static char *rocksdb_transaction_index_type;
 
 std::atomic<uint64_t> rocksdb_row_lock_deadlocks(0);
 std::atomic<uint64_t> rocksdb_row_lock_wait_timeouts(0);
@@ -1384,6 +1395,13 @@ static MYSQL_SYSVAR_UINT(flush_log_at_trx_commit,
                          /* min */ FLUSH_LOG_NEVER,
                          /* max */ FLUSH_LOG_BACKGROUND, 0);
 
+static MYSQL_SYSVAR_UINT(system_cf_background_flush_interval,
+                         rocksdb_system_cf_background_flush_interval,
+                         PLUGIN_VAR_RQCMDARG,
+                         "interval(seconds) of background flush column family "
+                         "'__system__' for RocksDB . 0 to disable", nullptr,
+                         nullptr, 120, 0, 3600, 0);
+
 static MYSQL_THDVAR_BOOL(write_disable_wal, PLUGIN_VAR_RQCMDARG,
                          "WriteOptions::disableWAL for RocksDB", nullptr,
                          nullptr, rocksdb::WriteOptions().disableWAL);
@@ -1703,6 +1721,13 @@ static MYSQL_SYSVAR_BOOL(error_on_suboptimal_collation,
                          "collation is used",
                          nullptr, nullptr, TRUE);
 
+
+static MYSQL_SYSVAR_STR(transaction_index_type, rocksdb_transaction_index_type,
+                        PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_MEMALLOC,
+                        "RocksDB transaction index type",
+                        rocksdb_check_transaction_index_type, nullptr,
+                        "skiplist");
+
 static const int ROCKSDB_ASSUMED_KEY_VALUE_DISK_SIZE = 100;
 
 static struct st_mysql_sys_var *rocksdb_system_variables[] = {
@@ -1722,6 +1747,7 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(blind_delete_primary_key),
     MYSQL_SYSVAR(read_free_rpl_tables),
     MYSQL_SYSVAR(bulk_load_size),
+    MYSQL_SYSVAR(transaction_index_type),
     MYSQL_SYSVAR(merge_buf_size),
     MYSQL_SYSVAR(enable_bulk_load_api),
     MYSQL_SYSVAR(tmpdir),
@@ -1797,6 +1823,7 @@ static struct st_mysql_sys_var *rocksdb_system_variables[] = {
     MYSQL_SYSVAR(override_cf_options),
     MYSQL_SYSVAR(update_cf_options),
 
+    MYSQL_SYSVAR(system_cf_background_flush_interval),
     MYSQL_SYSVAR(flush_log_at_trx_commit),
     MYSQL_SYSVAR(write_disable_wal),
     MYSQL_SYSVAR(write_ignore_missing_column_families),
@@ -2667,6 +2694,10 @@ public:
   }
 };
 
+const rocksdb::WriteBatchEntryIndexFactory* get_write_batch_entry_index_factory() {
+  return rocksdb::GetWriteBatchEntryIndexFactory(rocksdb_transaction_index_type);
+}
+
 /*
   This is a rocksdb transaction. Its members represent the current transaction,
   which consists of:
@@ -2929,6 +2960,7 @@ public:
     tx_opts.use_only_the_last_commit_time_batch_for_recovery =
         THDVAR(m_thd, commit_time_batch_for_recovery);
     tx_opts.max_write_batch_size = THDVAR(m_thd, write_batch_max_bytes);
+    tx_opts.index_type = get_write_batch_entry_index_factory();
 
     write_opts.sync = (rocksdb_flush_log_at_trx_commit == FLUSH_LOG_SYNC);
     write_opts.disableWAL = THDVAR(m_thd, write_disable_wal);
@@ -3206,8 +3238,9 @@ public:
 
   explicit Rdb_writebatch_impl(THD *const thd)
       : Rdb_transaction(thd), m_batch(nullptr) {
+    auto index_factory = get_write_batch_entry_index_factory();
     m_batch = new rocksdb::WriteBatchWithIndex(rocksdb::BytewiseComparator(), 0,
-                                               true);
+                                               true, 0, index_factory);
   }
 
   virtual ~Rdb_writebatch_impl() {
@@ -4624,7 +4657,8 @@ static int rocksdb_init_func(void *const p) {
 
   DBUG_ASSERT(!mysqld_embedded);
 
-  if (rocksdb_db_options->max_open_files > (long)open_files_limit) {
+  if ((rocksdb_db_options->max_open_files > (long)open_files_limit ||
+       rocksdb_db_options->max_open_files < 0) && rocksdb_db_options->max_open_files != -1) {
     sql_print_information("RocksDB: rocksdb_max_open_files should not be "
                           "greater than the open_files_limit, effective value "
                           "of rocksdb_max_open_files is being set to "
@@ -4857,12 +4891,19 @@ static int rocksdb_init_func(void *const p) {
   rocksdb::Options main_opts(*rocksdb_db_options,
                              cf_options_map->get_defaults());
 
+  main_opts.allow_mmap_reads = true;
+  main_opts.env->SetBackgroundThreads(main_opts.max_background_flushes,
+                                      rocksdb::Env::Priority::HIGH);
+  main_opts.env->SetBackgroundThreads(main_opts.max_background_compactions,
+                                      rocksdb::Env::Priority::LOW);
   rocksdb::TransactionDBOptions tx_db_options;
   tx_db_options.transaction_lock_timeout = 2000;  // 2 seconds
   tx_db_options.custom_mutex_factory = std::make_shared<Rdb_mutex_factory>();
   tx_db_options.write_policy =
       static_cast<rocksdb::TxnDBWritePolicy>(rocksdb_write_policy);
 
+/*
+  // TerarkZipTable is not BlockBasedTable, skip the check
   status =
       check_rocksdb_options_compatibility(rocksdb_datadir, main_opts, cf_descr);
 
@@ -4874,6 +4915,7 @@ static int rocksdb_init_func(void *const p) {
     rdb_open_tables.free_hash();
     DBUG_RETURN(HA_EXIT_FAILURE);
   }
+*/
 
   status = rocksdb::TransactionDB::Open(
       main_opts, tx_db_options, rocksdb_datadir, cf_descr, &cf_handles, &rdb);
@@ -5545,7 +5587,22 @@ ha_rocksdb::ha_rocksdb(my_core::handlerton *const hton,
       m_dup_sk_packed_tuple_old(nullptr), m_pack_buffer(nullptr),
       m_lock_rows(RDB_LOCK_NONE), m_keyread_only(FALSE), m_encoder_arr(nullptr),
       m_row_checksums_checked(0), m_in_rpl_delete_rows(false),
-      m_in_rpl_update_rows(false), m_force_skip_unique_check(false) {}
+      m_in_rpl_update_rows(false), m_force_skip_unique_check(false)
+{
+  m_skip_unique_check = false;
+  m_sk_match_length = 0;
+  m_dupp_errkey = 0;
+  m_null_bytes_in_rec = 0;
+  m_verify_row_debug_checksums = false;
+  m_use_read_free_rpl = false;
+  m_ttl_bytes_updated = false;
+  m_pk_key_parts = false;
+  m_store_row_debug_checksums = false;
+  m_rnd_scan_is_new_snapshot = false;
+  m_checksums_pct = false;
+  m_update_scope_is_valid = false;
+  m_skip_scan_it_next_call = false;
+}
 
 static const char *ha_rocksdb_exts[] = {NullS};
 
@@ -6089,6 +6146,9 @@ int ha_rocksdb::convert_field_from_storage_format(
 int ha_rocksdb::convert_record_from_storage_format(
     const rocksdb::Slice *const key, const rocksdb::Slice *const value,
     uchar *const buf) {
+  const char* val_pos = value->data();
+  const char* val_end = value->data() + value->size();
+  #define     val_rem  size_t(val_end - val_pos)
   Rdb_string_reader reader(value);
 
   /*
@@ -6097,17 +6157,11 @@ int ha_rocksdb::convert_record_from_storage_format(
   DBUG_EXECUTE_IF("myrocks_simulate_bad_pk_read1",
                   dbug_modify_key_varchar8(m_last_rowkey););
 
-  const rocksdb::Slice rowkey_slice(m_last_rowkey.ptr(),
-                                    m_last_rowkey.length());
-  const char *unpack_info = nullptr;
-  uint16 unpack_info_len = 0;
-  rocksdb::Slice unpack_slice;
-
   /* If it's a TTL record, skip the 8 byte TTL value */
-  const char *ttl_bytes;
   if (m_pk_descr->has_ttl()) {
-    if ((ttl_bytes = reader.read(ROCKSDB_SIZEOF_TTL_RECORD))) {
-      memcpy(m_ttl_bytes, ttl_bytes, ROCKSDB_SIZEOF_TTL_RECORD);
+    if (ROCKSDB_SIZEOF_TTL_RECORD <= val_rem) {
+      memcpy(m_ttl_bytes, val_pos, ROCKSDB_SIZEOF_TTL_RECORD);
+      val_pos += ROCKSDB_SIZEOF_TTL_RECORD;
     } else {
       return HA_ERR_ROCKSDB_CORRUPT_DATA;
     }
@@ -6115,34 +6169,43 @@ int ha_rocksdb::convert_record_from_storage_format(
 
   /* Other fields are decoded from the value */
   const char *null_bytes = nullptr;
-  if (m_null_bytes_in_rec && !(null_bytes = reader.read(m_null_bytes_in_rec))) {
-    return HA_ERR_ROCKSDB_CORRUPT_DATA;
+  if (m_null_bytes_in_rec) {
+    if (m_null_bytes_in_rec <= val_rem)
+      null_bytes = val_pos, val_pos += m_null_bytes_in_rec;
+    else
+      return HA_ERR_ROCKSDB_CORRUPT_DATA;
   }
 
   if (m_maybe_unpack_info) {
-    unpack_info = reader.get_current_ptr();
-    if (!unpack_info || !Rdb_key_def::is_unpack_data_tag(unpack_info[0]) ||
-        !reader.read(Rdb_key_def::get_unpack_header_size(unpack_info[0]))) {
+    if (val_rem == 0 || !Rdb_key_def::is_unpack_data_tag(val_pos[0])) {
       return HA_ERR_ROCKSDB_CORRUPT_DATA;
     }
-
-    unpack_info_len =
-        rdb_netbuf_to_uint16(reinterpret_cast<const uchar *>(unpack_info + 1));
-    unpack_slice = rocksdb::Slice(unpack_info, unpack_info_len);
-
-    reader.read(unpack_info_len -
-                Rdb_key_def::get_unpack_header_size(unpack_info[0]));
-  }
-
-  int err = HA_EXIT_SUCCESS;
-  if (m_key_requested) {
-    err = m_pk_descr->unpack_record(table, buf, &rowkey_slice,
-                                    unpack_info ? &unpack_slice : nullptr,
-                                    false /* verify_checksum */);
-  }
-
-  if (err != HA_EXIT_SUCCESS) {
-    return err;
+    size_t unpack_header_size= Rdb_key_def::get_unpack_header_size(val_pos[0]);
+    if (val_rem < unpack_header_size) {
+      return HA_ERR_ROCKSDB_CORRUPT_DATA;
+    }
+    uint16 unpack_info_len =
+        rdb_netbuf_to_uint16(reinterpret_cast<const uchar*>(val_pos + 1));
+    if (m_key_requested) {
+      rocksdb::Slice unpack_slice(val_pos, unpack_info_len);
+      rocksdb::Slice rowkey_slice(m_last_rowkey.ptr(), m_last_rowkey.length());
+      int err = m_pk_descr->unpack_record(table, buf, &rowkey_slice,
+                                          &unpack_slice,
+                                          false /* verify_checksum */);
+      if (err != HA_EXIT_SUCCESS) {
+        return err;
+      }
+    }
+    val_pos += unpack_info_len; // including unpack_header_size
+  } else {
+    if (m_key_requested) {
+      rocksdb::Slice rowkey_slice(m_last_rowkey.ptr(), m_last_rowkey.length());
+      int err = m_pk_descr->unpack_record(table, buf, &rowkey_slice, nullptr,
+                                          false /* verify_checksum */);
+      if (err != HA_EXIT_SUCCESS) {
+        return err;
+      }
+    }
   }
 
   for (auto it = m_decoders_vect.begin(); it != m_decoders_vect.end(); it++) {
@@ -6155,63 +6218,105 @@ int ha_rocksdb::convert_record_from_storage_format(
     Field *const field = table->field[field_dec->m_field_index];
 
     /* Skip the bytes we need to skip */
-    if (it->m_skip && !reader.read(it->m_skip)) {
-      return HA_ERR_ROCKSDB_CORRUPT_DATA;
+    if (size_t skip = it->m_skip) {
+      if (skip <= val_rem) {
+        val_pos += skip;
+      } else {
+        return HA_ERR_ROCKSDB_CORRUPT_DATA;
+      }
     }
 
-    uint field_offset = field->ptr - table->record[0];
-    uint null_offset = field->null_offset();
-    bool maybe_null = field->real_maybe_null();
-    field->move_field(buf + field_offset,
-                      maybe_null ? buf + null_offset : nullptr,
-                      field->null_bit);
-    // WARNING! - Don't return before restoring field->ptr and field->null_ptr!
+    uint const field_offset = field->ptr - table->record[0];
+    uchar* const fieldptr = buf + field_offset;
 
     if (isNull) {
       if (decode) {
-        /* This sets the NULL-bit of this record */
-        field->set_null();
+        if (field->real_maybe_null()) // set null
+          buf[field->null_offset()] |= field->null_bit;
         /*
           Besides that, set the field value to default value. CHECKSUM TABLE
           depends on this.
         */
-        memcpy(field->ptr, table->s->default_values + field_offset,
+        memcpy(fieldptr, table->s->default_values + field_offset,
                field->pack_length());
       }
     } else {
       if (decode) {
-        field->set_notnull();
+        if (field->real_maybe_null()) // set not null
+          buf[field->null_offset()] &= (uchar)~field->null_bit;
       }
-
       if (field_dec->m_field_type == MYSQL_TYPE_BLOB) {
-        err = convert_blob_from_storage_format(
-            (my_core::Field_blob *) field, &reader, decode);
+        const auto blob = (my_core::Field_blob *)field;
+        const uint length_bytes = blob->pack_length() - portable_sizeof_char_ptr;
+
+        if (val_rem < length_bytes) {
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
+        memcpy(fieldptr, val_pos, length_bytes);
+        const uint32 data_len = my_core::Field_blob::get_length(
+            reinterpret_cast<const uchar*>(val_pos), length_bytes,
+            table->s->db_low_byte_first);
+        val_pos += length_bytes;
+        if (val_rem < data_len) {
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
+        if (decode) {
+          // set 8-byte pointer to 0, like innodb does (relevant for 32-bit
+          // platforms)
+          memcpy(fieldptr + length_bytes, &val_pos, sizeof(uchar **));
+        }
+        val_pos += data_len;
       } else if (field_dec->m_field_type == MYSQL_TYPE_VARCHAR) {
-        err = convert_varchar_from_storage_format(
-            (my_core::Field_varstring *) field, &reader, decode);
+        // convert_varchar_from_storage_format
+        const auto field_var = (my_core::Field_varstring *)field;
+        const size_t length_bytes = field_var->length_bytes;
+        if (val_rem < length_bytes)
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+
+        size_t data_len;
+        /* field_var->length_bytes is 1 or 2 */
+        if (length_bytes == 1) {
+          data_len = (uchar)val_pos[0];
+        } else {
+          DBUG_ASSERT(length_bytes == 2);
+          data_len = uint2korr(val_pos);
+        }
+        if (data_len > field_var->field_length) {
+          /* The data on disk is longer than table DDL allows? */
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
+        size_t all_len = length_bytes + data_len;
+        if (val_rem < all_len) {
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
+        if (decode) {
+          memcpy(fieldptr, val_pos, all_len);
+        }
+        val_pos += all_len;
       } else {
-        err = convert_field_from_storage_format(
-            field, &reader, decode, field_dec->m_pack_length_in_rec);
+        // convert_field_from_storage_format()
+        size_t len = field_dec->m_pack_length_in_rec;
+        if (len > 0) {
+          if (val_rem < len) {
+            return HA_ERR_ROCKSDB_CORRUPT_DATA;
+          }
+          if (decode) {
+            memcpy(fieldptr, val_pos, len);
+          }
+          val_pos += len;
+        }
       }
-    }
-
-    // Restore field->ptr and field->null_ptr
-    field->move_field(table->record[0] + field_offset,
-                      maybe_null ? table->record[0] + null_offset : nullptr,
-                      field->null_bit);
-
-    if (err != HA_EXIT_SUCCESS) {
-      return err;
     }
   }
 
   if (m_verify_row_debug_checksums) {
-    if (reader.remaining_bytes() == RDB_CHECKSUM_CHUNK_SIZE &&
-        reader.read(1)[0] == RDB_CHECKSUM_DATA_TAG) {
+    if (val_rem == RDB_CHECKSUM_CHUNK_SIZE &&
+        val_pos++[0] == RDB_CHECKSUM_DATA_TAG) {
       uint32_t stored_key_chksum =
-          rdb_netbuf_to_uint32((const uchar *)reader.read(RDB_CHECKSUM_SIZE));
+          rdb_netbuf_to_uint32((const uchar *)val_pos);
       uint32_t stored_val_chksum =
-          rdb_netbuf_to_uint32((const uchar *)reader.read(RDB_CHECKSUM_SIZE));
+          rdb_netbuf_to_uint32((const uchar *)val_pos + RDB_CHECKSUM_SIZE);
+      val_pos += 2 * RDB_CHECKSUM_SIZE;
 
       const uint32_t computed_key_chksum =
           my_core::crc32(0, rdb_slice_to_uchar_ptr(key), key->size());
@@ -6237,7 +6342,7 @@ int ha_rocksdb::convert_record_from_storage_format(
 
       m_row_checksums_checked++;
     }
-    if (reader.remaining_bytes())
+    if (val_rem)
       return HA_ERR_ROCKSDB_CORRUPT_DATA;
   }
 
@@ -10849,6 +10954,10 @@ void Rdb_drop_index_thread::run() {
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
         rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
                                          is_reverse_cf ? 0 : 1);
+        rocksdb::CompactRangeOptions compact_range_options;
+        compact_range_options.bottommost_level_compaction =
+            rocksdb::BottommostLevelCompaction::kForce;
+        compact_range_options.exclusive_manual_compaction = false;
         rocksdb::Status status = DeleteFilesInRange(rdb->GetBaseDB(), cfh,
                                                     &range.start, &range.limit);
         if (!status.ok()) {
@@ -10857,17 +10966,24 @@ void Rdb_drop_index_thread::run() {
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        status = rdb->CompactRange(getCompactRangeOptions(), cfh, &range.start,
-                                   &range.limit);
-        if (!status.ok()) {
-          if (status.IsShutdownInProgress()) {
-            break;
+        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
+          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+            finished.insert(d);
           }
-          rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
-        {
-          finished.insert(d);
+        else {
+          status = rdb->CompactRange(compact_range_options, cfh, &range.start,
+                                     &range.limit);
+          if (!status.ok()) {
+            if (status.IsShutdownInProgress()) {
+              break;
+            }
+            rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
+          }
+          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+            finished.insert(d);
+          }
         }
       }
 
@@ -11245,8 +11361,10 @@ int ha_rocksdb::optimize(THD *const thd, HA_CHECK_OPT *const check_opt) {
   for (uint i = 0; i < table->s->keys; i++) {
     uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
     auto range = get_range(i, buf);
+    auto cfh = m_key_descr_arr[i]->get_cf();
+    rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
     const rocksdb::Status s = rdb->CompactRange(getCompactRangeOptions(),
-                                                m_key_descr_arr[i]->get_cf(),
+                                                cfh,
                                                 &range.start, &range.limit);
     if (!s.ok()) {
       DBUG_RETURN(rdb_error_to_mysql(s));
@@ -12735,6 +12853,7 @@ static SHOW_VAR rocksdb_status_vars[] = {
 void Rdb_background_thread::run() {
   // How many seconds to wait till flushing the WAL next time.
   const int WAKE_UP_INTERVAL = 1;
+  uint32_t flush_tick = 0;
 
   timespec ts_next_sync;
   clock_gettime(CLOCK_REALTIME, &ts_next_sync);
@@ -12782,6 +12901,19 @@ void Rdb_background_thread::run() {
       if (!s.ok()) {
         rdb_handle_io_error(s, RDB_IO_ERROR_BG_THREAD);
       }
+    }
+    // Flush __system__
+    if (rdb && rocksdb_system_cf_background_flush_interval > 0
+        && flush_tick++ >= rocksdb_system_cf_background_flush_interval) {
+      const Rdb_cf_manager &cf_manager = rdb_get_cf_manager();
+      rocksdb::ColumnFamilyHandle *cfh;
+      cfh = cf_manager.get_cf(DEFAULT_SYSTEM_CF_NAME);
+      if (cfh != nullptr) {
+        rocksdb::FlushOptions fo;
+        fo.wait = false;
+        rdb->Flush(fo, cfh);
+      }
+      flush_tick = 0;
     }
 
     // Recalculate statistics for indexes.
@@ -13387,6 +13519,28 @@ int rocksdb_check_bulk_load_allow_unsorted(
   return 0;
 }
 
+int rocksdb_check_transaction_index_type(
+    THD *const thd,
+    struct st_mysql_sys_var *var,
+    void *save,
+    struct st_mysql_value *value) {
+  char buff[STRING_BUFFER_USUAL_SIZE];
+  int len = sizeof(buff);
+
+  const char* name = value->val_str(value, buff, &len);
+  if (!name || !strlen(name)) {
+    return 1;
+  }
+  if (rocksdb::GetWriteBatchEntryIndexFactory(name) == nullptr) {
+      my_error(ER_ERROR_WHEN_EXECUTING_COMMAND, MYF(0), "SET",
+               "transaction_index_type does not support");
+      return 1;
+  }
+  const char* new_name = my_strdup(name, MYF(0));
+  *static_cast<const char**>(save) = new_name;
+  return 0;
+}
+
 static void rocksdb_set_max_background_jobs(THD *thd,
                                             struct st_mysql_sys_var *const var,
                                             void *const var_ptr,
@@ -13734,4 +13888,5 @@ mysql_declare_plugin(rocksdb_se){
     myrocks::rdb_i_s_global_info, myrocks::rdb_i_s_ddl,
     myrocks::rdb_i_s_sst_props, myrocks::rdb_i_s_index_file_map,
     myrocks::rdb_i_s_lock_info, myrocks::rdb_i_s_trx_info,
+    myrocks::rdb_i_s_tfoptions,
     myrocks::rdb_i_s_deadlock_info mysql_declare_plugin_end;

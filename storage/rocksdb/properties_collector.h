@@ -175,7 +175,9 @@ public:
   operator=(const Rdb_tbl_prop_coll_factory &) = delete;
 
   explicit Rdb_tbl_prop_coll_factory(Rdb_ddl_manager *ddl_manager)
-      : m_ddl_manager(ddl_manager) {}
+      : m_ddl_manager(ddl_manager),
+        m_table_stats_sampling_pct()
+  {}
 
   /*
     Override parent class's virtual methods of interest.
