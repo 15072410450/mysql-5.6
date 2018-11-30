@@ -6262,6 +6262,10 @@ int ha_rocksdb::convert_record_from_storage_format(
           DBUG_ASSERT(length_bytes == 2);
           data_len = uint2korr(val_pos);
         }
+        if (data_len > field_var->field_length) {
+          /* The data on disk is longer than table DDL allows? */
+          return HA_ERR_ROCKSDB_CORRUPT_DATA;
+        }
         size_t all_len = length_bytes + data_len;
         if (val_rem < all_len) {
           return HA_ERR_ROCKSDB_CORRUPT_DATA;
