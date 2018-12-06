@@ -33,48 +33,48 @@ COPY_OPENSSL_DLLS(copy_openssl_client)
 
 ADD_DEFINITIONS(${SSL_DEFINES})
 MYSQL_ADD_EXECUTABLE(mysql completion_hash.cc mysql.cc readline.cc sql_string.cc)
-TARGET_LINK_LIBRARIES(mysql fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysql fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 IF(UNIX)
-  TARGET_LINK_LIBRARIES(mysql ${READLINE_LIBRARY} ${CURSES_LIBRARY})
+  TARGET_LINK_LIBRARIES(mysql ${READLINE_LIBRARY} ${CURSES_LIBRARY} ${ZSTD_LIBRARY_APPEND})
 ENDIF(UNIX)
 
 MYSQL_ADD_EXECUTABLE(mysqltest mysqltest.cc COMPONENT Test)
 SET_SOURCE_FILES_PROPERTIES(mysqltest.cc PROPERTIES COMPILE_FLAGS "-DTHREADS")
-TARGET_LINK_LIBRARIES(mysqltest fbmysqlclient regex)
+TARGET_LINK_LIBRARIES(mysqltest fbmysqlclient regex ${ZSTD_LIBRARY_APPEND})
 
 
 MYSQL_ADD_EXECUTABLE(mysqlcheck mysqlcheck.c)
-TARGET_LINK_LIBRARIES(mysqlcheck fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysqlcheck fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 
 MYSQL_ADD_EXECUTABLE(mysqldump mysqldump.c ../sql-common/my_user.c)
-TARGET_LINK_LIBRARIES(mysqldump fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysqldump fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 
 MYSQL_ADD_EXECUTABLE(mysqlimport mysqlimport.c)
 SET_SOURCE_FILES_PROPERTIES(mysqlimport.c PROPERTIES COMPILE_FLAGS "-DTHREADS")
-TARGET_LINK_LIBRARIES(mysqlimport fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysqlimport fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 
 MYSQL_ADD_EXECUTABLE(mysql_upgrade mysql_upgrade.c)
-TARGET_LINK_LIBRARIES(mysql_upgrade fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysql_upgrade fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 ADD_DEPENDENCIES(mysql_upgrade GenFixPrivs)
 
 MYSQL_ADD_EXECUTABLE(mysqlshow mysqlshow.c)
-TARGET_LINK_LIBRARIES(mysqlshow fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysqlshow fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 
 MYSQL_ADD_EXECUTABLE(mysql_plugin mysql_plugin.c)
 TARGET_LINK_LIBRARIES(mysql_plugin fbmysqlclient)
 
 MYSQL_ADD_EXECUTABLE(mysqlbinlog mysqlbinlog.cc)
-TARGET_LINK_LIBRARIES(mysqlbinlog fbmysqlclient semisync_slave_client)
+TARGET_LINK_LIBRARIES(mysqlbinlog fbmysqlclient semisync_slave_client ${ZSTD_LIBRARY_APPEND})
 
 MYSQL_ADD_EXECUTABLE(mysqladmin mysqladmin.cc)
-TARGET_LINK_LIBRARIES(mysqladmin fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysqladmin fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 
 MYSQL_ADD_EXECUTABLE(mysqlslap mysqlslap.c)
 SET_SOURCE_FILES_PROPERTIES(mysqlslap.c PROPERTIES COMPILE_FLAGS "-DTHREADS")
-TARGET_LINK_LIBRARIES(mysqlslap fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysqlslap fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 
 MYSQL_ADD_EXECUTABLE(mysql_config_editor mysql_config_editor.cc)
-TARGET_LINK_LIBRARIES(mysql_config_editor fbmysqlclient)
+TARGET_LINK_LIBRARIES(mysql_config_editor fbmysqlclient ${ZSTD_LIBRARY_APPEND})
 
 # "WIN32" also covers 64 bit. "echo" is used in some files below "mysql-test/".
 IF(WIN32)

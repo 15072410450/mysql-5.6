@@ -135,7 +135,7 @@ IF (WITH_BZ2)
 ENDIF()
 
 IF (WITH_ZSTD)
-  SET(rocksdb_static_libs ${rocksdb_static_libs} ${ZSTD_LIBRARY})
+  SET(rocksdb_static_libs ${rocksdb_static_libs})
   ADD_DEFINITIONS(-DZSTD)
 ENDIF()
 
@@ -173,7 +173,7 @@ ELSE()
 		${WITH_TERARKDB}/lib_static/libterark-fsa-${TERARK_LIB_SUFFIX}.a
 		${WITH_TERARKDB}/lib_static/libterark-core-${TERARK_LIB_SUFFIX}.a
 		-Wl,--no-whole-archive
-		-lcrypto
+		/lib64/libcrypto.a
 		${CMAKE_CURRENT_BINARY_DIR}/librocksdb_se.a
 		-ldl
 		-lgomp -lz)
