@@ -11008,7 +11008,8 @@ void Rdb_drop_index_thread::run() {
           continue;
         }
         rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
-        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
+        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal &&
+            !cf_options.enable_lazy_compaction) {
           continue;
         }
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
