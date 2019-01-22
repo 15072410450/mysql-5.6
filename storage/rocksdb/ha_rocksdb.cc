@@ -10933,6 +10933,62 @@ void Rdb_drop_index_thread::run() {
       rocksdb::ReadOptions read_opts;
       read_opts.total_order_seek = true; // disable bloom filter
 
+      struct buf_t {
+        uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
+        rocksdb::Slice start, limit;
+      };
+      std::vector<buf_t> buf_vec;
+      std::unordered_map<uint32_t, std::vector<rocksdb::RangePtr>> cf_ranges;
+      buf_vec.reserve(indices.size());
+
+      for (auto it = indices.begin(); it != indices.end(); ) {
+        const auto d = *it;
+        uint32 cf_flags = 0;
+        if (!dict_manager.get_cf_flags(d.cf_id, &cf_flags)) {
+          sql_print_error("RocksDB: Failed to get column family flags "
+                          "from cf id %u. MyRocks data dictionary may "
+                          "get corrupted.",
+                          d.cf_id);
+          abort();
+        }
+        rocksdb::ColumnFamilyHandle *cfh = cf_manager.get_cf(d.cf_id);
+        DBUG_ASSERT(cfh);
+        const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
+
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+          finished.insert(d);
+          indices.erase(it++);
+          continue;
+        }
+        buf_vec.emplace_back();
+        auto &start = buf_vec.back().start;
+        auto &limit = buf_vec.back().limit;
+        uchar *buf = buf_vec.back().buf;
+        auto &range_vec = cf_ranges[d.cf_id];
+        auto range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
+                               is_reverse_cf ? 0 : 1);
+        start = range.start;
+        limit = range.limit;
+        range_vec.emplace_back(&start, &limit, true, true);
+        ++it;
+      }
+      rocksdb::Status status;
+      for (auto &pair : cf_ranges) {
+        rocksdb::ColumnFamilyHandle *cfh = cf_manager.get_cf(pair.first);
+        DBUG_ASSERT(cfh);
+        auto &range_vec = pair.second;
+        status = DeleteFilesInRanges(rdb->GetBaseDB(), cfh, range_vec.data(),
+                                     range_vec.size());
+        if (!status.ok()) {
+          if (status.IsShutdownInProgress()) {
+            break;
+          }
+          rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
+        }
+      }
+      std::vector<buf_t>().swap(buf_vec);
+      cf_ranges.clear();
+
       for (const auto d : indices) {
         uint32 cf_flags = 0;
         if (!dict_manager.get_cf_flags(d.cf_id, &cf_flags)) {
@@ -10951,6 +11007,10 @@ void Rdb_drop_index_thread::run() {
           finished.insert(d);
           continue;
         }
+        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
+        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
+          continue;
+        }
         uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
         rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
                                          is_reverse_cf ? 0 : 1);
@@ -10958,32 +11018,16 @@ void Rdb_drop_index_thread::run() {
         compact_range_options.bottommost_level_compaction =
             rocksdb::BottommostLevelCompaction::kForce;
         compact_range_options.exclusive_manual_compaction = false;
-        rocksdb::Status status = DeleteFilesInRange(rdb->GetBaseDB(), cfh,
-                                                    &range.start, &range.limit);
+        status = rdb->CompactRange(compact_range_options, cfh, &range.start,
+                                    &range.limit);
         if (!status.ok()) {
           if (status.IsShutdownInProgress()) {
             break;
           }
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
-        rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
-        if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal) {
-          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-            finished.insert(d);
-          }
-        }
-        else {
-          status = rdb->CompactRange(compact_range_options, cfh, &range.start,
-                                     &range.limit);
-          if (!status.ok()) {
-            if (status.IsShutdownInProgress()) {
-              break;
-            }
-            rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
-          }
-          if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-            finished.insert(d);
-          }
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+          finished.insert(d);
         }
       }
 
