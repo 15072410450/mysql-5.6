@@ -10894,6 +10894,11 @@ static bool is_myrocks_index_empty(
   return index_removed;
 }
 
+static void finish_drop_myrocks_indexes(GL_INDEX_ID d) {
+  std::unordered_set<GL_INDEX_ID> finished = {d};
+  dict_manager.finish_drop_indexes(finished);
+};
+
 /*
   Drop index thread's main logic
 */
@@ -10929,7 +10934,6 @@ void Rdb_drop_index_thread::run() {
     std::unordered_set<GL_INDEX_ID> indices;
     dict_manager.get_ongoing_drop_indexes(&indices);
     if (!indices.empty()) {
-      std::unordered_set<GL_INDEX_ID> finished;
       rocksdb::ReadOptions read_opts;
       read_opts.total_order_seek = true; // disable bloom filter
 
@@ -10941,8 +10945,10 @@ void Rdb_drop_index_thread::run() {
       std::unordered_map<uint32_t, std::vector<rocksdb::RangePtr>> cf_ranges;
       buf_vec.reserve(indices.size());
 
-      for (auto it = indices.begin(); it != indices.end(); ) {
-        const auto d = *it;
+      for (const auto d : indices) {
+        if (m_stop) {
+          break;
+        }
         uint32 cf_flags = 0;
         if (!dict_manager.get_cf_flags(d.cf_id, &cf_flags)) {
           sql_print_error("RocksDB: Failed to get column family flags "
@@ -10955,11 +10961,6 @@ void Rdb_drop_index_thread::run() {
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-          finished.insert(d);
-          indices.erase(it++);
-          continue;
-        }
         buf_vec.emplace_back();
         auto &start = buf_vec.back().start;
         auto &limit = buf_vec.back().limit;
@@ -10970,7 +10971,6 @@ void Rdb_drop_index_thread::run() {
         start = range.start;
         limit = range.limit;
         range_vec.emplace_back(&start, &limit, true, true);
-        ++it;
       }
       rocksdb::Status status;
       for (auto &pair : cf_ranges) {
@@ -10990,6 +10990,9 @@ void Rdb_drop_index_thread::run() {
       cf_ranges.clear();
 
       for (const auto d : indices) {
+        if (m_stop) {
+          break;
+        }
         uint32 cf_flags = 0;
         if (!dict_manager.get_cf_flags(d.cf_id, &cf_flags)) {
           sql_print_error("RocksDB: Failed to get column family flags "
@@ -11002,19 +11005,26 @@ void Rdb_drop_index_thread::run() {
         DBUG_ASSERT(cfh);
         const bool is_reverse_cf = cf_flags & Rdb_key_def::REVERSE_CF_FLAG;
 
-        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id))
-        {
-          finished.insert(d);
+        if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
+          finish_drop_myrocks_indexes(d);
           continue;
+        }
+        uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
+        rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
+                                         is_reverse_cf ? 0 : 1);
+        status = DeleteFilesInRange(rdb->GetBaseDB(), cfh, &range.start,
+                                    &range.limit);
+        if (!status.ok()) {
+          if (status.IsShutdownInProgress()) {
+            break;
+          }
+          rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
         rocksdb::ColumnFamilyOptions cf_options = rdb->GetOptions(cfh);
         if (cf_options.compaction_style == rocksdb::kCompactionStyleUniversal &&
             !cf_options.enable_lazy_compaction) {
           continue;
         }
-        uchar buf[Rdb_key_def::INDEX_NUMBER_SIZE * 2];
-        rocksdb::Range range = get_range(d.index_id, buf, is_reverse_cf ? 1 : 0,
-                                         is_reverse_cf ? 0 : 1);
         rocksdb::CompactRangeOptions compact_range_options;
         compact_range_options.bottommost_level_compaction =
             rocksdb::BottommostLevelCompaction::kForce;
@@ -11028,12 +11038,8 @@ void Rdb_drop_index_thread::run() {
           rdb_handle_io_error(status, RDB_IO_ERROR_BG_THREAD);
         }
         if (is_myrocks_index_empty(cfh, is_reverse_cf, read_opts, d.index_id)) {
-          finished.insert(d);
+          finish_drop_myrocks_indexes(d);
         }
-      }
-
-      if (!finished.empty()) {
-        dict_manager.finish_drop_indexes(finished);
       }
     }
     RDB_MUTEX_LOCK_CHECK(m_signal_mutex);
